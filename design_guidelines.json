@@ -1,0 +1,124 @@
+{
+  "project_name": "D1 Custódia",
+  "app_type": "dashboard",
+  "theme": "dark",
+  "archetype": "4 (Swiss & High-Contrast - Dark Operational Variant)",
+  "design_philosophy": {
+    "goal": "Information clarity, functional beauty, and fast data entry for logistics operations.",
+    "vibe": "Professional, command-center, high-contrast, technical, operational.",
+    "rules": [
+      "Every pixel must be utilized intelligently. Use 'Control Room' grid layout.",
+      "No full-screen gradients; texture and solid technical backgrounds over gloss.",
+      "Clear status indicators using high-contrast colors (amber, emerald, red).",
+      "Ensure fast readability for operations workers."
+    ]
+  },
+  "colors": {
+    "background": {
+      "app": "bg-slate-950",
+      "surface": "bg-slate-900",
+      "surface_hover": "bg-slate-800",
+      "overlay": "bg-slate-950/80"
+    },
+    "borders": {
+      "default": "border-slate-800",
+      "focus": "border-blue-500"
+    },
+    "text": {
+      "primary": "text-slate-50",
+      "secondary": "text-slate-400",
+      "muted": "text-slate-500"
+    },
+    "primary": {
+      "DEFAULT": "bg-blue-600",
+      "hover": "bg-blue-500",
+      "text": "text-white"
+    },
+    "status": {
+      "pending": {
+        "text": "text-amber-500",
+        "bg": "bg-amber-500/10",
+        "border": "border-amber-500/20"
+      },
+      "resolved": {
+        "text": "text-emerald-500",
+        "bg": "bg-emerald-500/10",
+        "border": "border-emerald-500/20"
+      },
+      "expired": {
+        "text": "text-red-500",
+        "bg": "bg-red-500/10",
+        "border": "border-red-500/20"
+      }
+    }
+  },
+  "typography": {
+    "fonts": {
+      "heading": "Chivo, sans-serif",
+      "body": "IBM Plex Sans, sans-serif"
+    },
+    "hierarchy": {
+      "h1": "text-3xl sm:text-4xl font-black tracking-tight",
+      "h2": "text-2xl sm:text-3xl font-bold tracking-tight",
+      "h3": "text-xl sm:text-2xl font-semibold",
+      "h4": "text-lg sm:text-xl font-medium",
+      "body": "text-sm sm:text-base leading-relaxed",
+      "label": "text-xs font-bold uppercase tracking-[0.2em] text-slate-400"
+    }
+  },
+  "spacing_and_layout": {
+    "grid_strategy": "Control Room Grid",
+    "dashboard_grid": "grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6",
+    "container_padding": "p-4 sm:p-6 lg:p-8",
+    "card_padding": "p-4 sm:p-6",
+    "surface_styles": {
+      "cards": "bg-slate-900 border border-slate-800 rounded-lg shadow-sm",
+      "glass": "bg-slate-900/80 backdrop-blur-xl border-b border-slate-800"
+    }
+  },
+  "navigation": {
+    "mobile": {
+      "type": "bottom_bar",
+      "classes": "fixed bottom-0 left-0 right-0 h-16 bg-slate-900/90 backdrop-blur-lg border-t border-slate-800 flex justify-around items-center z-50 lg:hidden"
+    },
+    "desktop": {
+      "type": "sidebar",
+      "classes": "fixed top-0 left-0 w-64 h-screen bg-slate-900 border-r border-slate-800 hidden lg:flex flex-col z-50"
+    },
+    "main_content": "pb-20 lg:pb-0 lg:pl-64 min-h-screen bg-slate-950"
+  },
+  "components": {
+    "metrics_card": "Flat background (slate-900), 1px subtle border (slate-800), large primary metric text (text-3xl font-black), clear status icon, subtle hover lift (-translate-y-0.5) and border highlight.",
+    "data_table": "Dense layout, border-collapse, subtle border-b on rows, distinct status badges.",
+    "forms": "Use Shadcn inputs. Dark theme inputs with border-slate-800, focus:ring-1 focus:ring-blue-500, clear labels.",
+    "photo_upload": "Dashed border area (border-slate-700 hover:border-blue-500 bg-slate-950/50), central upload icon, preview grid for selected photos."
+  },
+  "icons_library": "lucide-react",
+  "media": {
+    "images": {
+      "login_background": {
+        "url": "https://images.pexels.com/photos/30341205/pexels-photo-30341205.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "A dark, narrow warehouse aisle with shelves filled with boxes and goods, illuminated by overhead lights.",
+        "usage": "Use as a full-cover background image on the login page with a heavy dark overlay (bg-slate-950/80) to ensure login form readability."
+      }
+    }
+  },
+  "testing": {
+    "rules": [
+      "All interactive and key informational elements MUST include a 'data-testid' attribute.",
+      "Convention: kebab-case, role-based. e.g., data-testid='submit-custody-button'."
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Implement the UI using React, Tailwind CSS, and Shadcn UI primitives.",
+    "Ensure the app is fully responsive. Mobile view should prioritize the bottom navigation bar and stack dashboard cards. Desktop view uses a fixed left sidebar.",
+    "Install and import 'lucide-react' for all icons (Dashboard, Plus/New, History, User/Profile, Upload, Export, etc.).",
+    "Use Google Fonts 'Chivo' for headings and 'IBM Plex Sans' for body text. Update index.html or global css to import these.",
+    "The login page should feature the provided warehouse image as a background with a heavy slate-950 overlay.",
+    "Dashboard should have 4 metric cards (Total Remessas, Pendentes, Resolvidas, Vencidas) mapping to the defined status colors.",
+    "The 'Nova Custódia' form should handle basic text inputs and have dedicated sections for uploading 'Etiqueta', 'Caixa', and 'Adicional' photos.",
+    "Implement the layout wrappers to handle the space required for the mobile bottom nav (pb-20) and desktop sidebar (lg:pl-64).",
+    "DO NOT use Inter or generic sans-serif for headings.",
+    "Always apply 'data-testid' attributes to all buttons, links, form inputs, and significant UI elements for testing."
+  ]
+}
