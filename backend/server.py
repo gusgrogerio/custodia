@@ -165,10 +165,56 @@ class CustodyCreate(BaseModel):
     address: Optional[str] = None
     occurrence_type: str
     observation: Optional[str] = None
+    volume_current: int = 1
+    volume_total: int = 1
 
 class CustodyUpdate(BaseModel):
     status: Optional[str] = None
     observation: Optional[str] = None
+
+# Helper function to generate box number
+async def generate_box_number() -> str:
+    """Generate unique box number in format CX-YYYYMMDD-NNN"""
+    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    prefix = f"CX-{today}-"
+    
+    # Find the last box number for today
+    last_custody = await db.custodies.find_one(
+        {"box_number": {"$regex": f"^{prefix}"}},
+        sort=[("box_number", -1)]
+    )
+    
+    if last_custody and last_custody.get("box_number"):
+        # Extract the sequence number and increment
+        try:
+            last_seq = int(last_custody["box_number"].split("-")[-1])
+            new_seq = last_seq + 1
+        except:
+            new_seq = 1
+    else:
+        new_seq = 1
+    
+    return f"{prefix}{new_seq:03d}"
+
+# Helper to calculate days without treatment
+def calculate_days_without_treatment(custody: dict) -> dict:
+    """Calculate days since last treatment and return status info"""
+    last_treatment = custody.get("last_treatment_at") or custody.get("created_at")
+    if isinstance(last_treatment, str):
+        last_treatment_dt = datetime.fromisoformat(last_treatment.replace('Z', '+00:00'))
+    else:
+        last_treatment_dt = last_treatment
+    
+    now = datetime.now(timezone.utc)
+    days_diff = (now - last_treatment_dt).days
+    
+    return {
+        "days_without_treatment": days_diff,
+        "days_until_return": max(0, 10 - days_diff),
+        "is_near_return": days_diff >= 8,
+        "is_ready_for_return": days_diff >= 10,
+        "alert_type": "return" if days_diff >= 10 else ("warning" if days_diff >= 8 else None)
+    }
 
 class CustodyResponse(BaseModel):
     id: str
@@ -283,31 +329,44 @@ async def refresh_token(request: Request, response: Response):
 async def create_custody(data: CustodyCreate, request: Request):
     user = await get_current_user(request)
     
+    # Generate unique box number
+    box_number = await generate_box_number()
+    now = datetime.now(timezone.utc).isoformat()
+    
     custody_doc = {
         "id": str(uuid.uuid4()),
+        "box_number": box_number,
         "shipment_code": data.shipment_code,
         "client_name": data.client_name,
         "phone": data.phone,
         "address": data.address,
         "occurrence_type": data.occurrence_type,
         "observation": data.observation,
+        "volume_current": data.volume_current,
+        "volume_total": data.volume_total,
         "status": "pending",
         "photos": [],
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": now,
+        "updated_at": now,
+        "last_treatment_at": now,
         "responsible_id": user["id"],
         "responsible_name": user["name"],
         "history": [{
             "action": "created",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": now,
             "user_id": user["id"],
             "user_name": user["name"],
-            "details": f"Custódia criada - Ocorrência: {data.occurrence_type}"
+            "details": f"Custódia criada - Caixa: {box_number} - Volume: {data.volume_current}/{data.volume_total} - Ocorrência: {data.occurrence_type}"
         }]
     }
     
     await db.custodies.insert_one(custody_doc)
     custody_doc.pop("_id", None)
+    
+    # Add treatment info
+    treatment_info = calculate_days_without_treatment(custody_doc)
+    custody_doc.update(treatment_info)
+    
     return custody_doc
 
 @api_router.get("/custodies")
@@ -319,6 +378,8 @@ async def list_custodies(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     expired: Optional[bool] = None,
+    near_return: Optional[bool] = None,
+    ready_for_return: Optional[bool] = None,
     limit: int = 100,
     skip: int = 0
 ):
@@ -344,7 +405,27 @@ async def list_custodies(
         query["status"] = "pending"
         query["created_at"] = {"$lt": expired_threshold}
     
+    # Filter for near return (8+ days without treatment)
+    if near_return:
+        near_threshold = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat()
+        query["status"] = {"$nin": ["resolved", "ready_for_return"]}
+        query["last_treatment_at"] = {"$lt": near_threshold}
+    
+    # Filter for ready for return (10+ days without treatment)
+    if ready_for_return:
+        return_threshold = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+        query["$or"] = [
+            {"status": "ready_for_return"},
+            {"status": {"$nin": ["resolved", "ready_for_return"]}, "last_treatment_at": {"$lt": return_threshold}}
+        ]
+    
     custodies = await db.custodies.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    
+    # Add treatment info to each custody
+    for custody in custodies:
+        treatment_info = calculate_days_without_treatment(custody)
+        custody.update(treatment_info)
+    
     return custodies
 
 @api_router.get("/custodies/stats")
@@ -353,6 +434,8 @@ async def get_custody_stats(request: Request):
     
     today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
     expired_threshold = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    near_return_threshold = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat()
+    return_threshold = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
     
     total_today = await db.custodies.count_documents({"created_at": {"$gte": today_start}})
     pending = await db.custodies.count_documents({"status": "pending"})
@@ -362,12 +445,96 @@ async def get_custody_stats(request: Request):
         "created_at": {"$lt": expired_threshold}
     })
     
+    # Near return (8-9 days without treatment)
+    near_return = await db.custodies.count_documents({
+        "status": {"$nin": ["resolved", "ready_for_return"]},
+        "last_treatment_at": {"$lt": near_return_threshold, "$gte": return_threshold}
+    })
+    
+    # Ready for return (10+ days without treatment)
+    ready_for_return = await db.custodies.count_documents({
+        "$or": [
+            {"status": "ready_for_return"},
+            {"status": {"$nin": ["resolved", "ready_for_return"]}, "last_treatment_at": {"$lt": return_threshold}}
+        ]
+    })
+    
     return {
         "total_today": total_today,
         "pending": pending,
         "resolved": resolved,
-        "expired": expired
+        "expired": expired,
+        "near_return": near_return,
+        "ready_for_return": ready_for_return
     }
+
+# Get alerts for dashboard
+@api_router.get("/custodies/alerts")
+async def get_custody_alerts(request: Request):
+    await get_current_user(request)
+    
+    near_return_threshold = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat()
+    return_threshold = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+    
+    alerts = []
+    
+    # Get custodies near return (8-9 days)
+    near_custodies = await db.custodies.find({
+        "status": {"$nin": ["resolved", "ready_for_return"]},
+        "last_treatment_at": {"$lt": near_return_threshold, "$gte": return_threshold}
+    }, {"_id": 0}).to_list(100)
+    
+    for custody in near_custodies:
+        treatment_info = calculate_days_without_treatment(custody)
+        alerts.append({
+            "type": "warning",
+            "custody_id": custody["id"],
+            "box_number": custody.get("box_number", "N/A"),
+            "shipment_code": custody["shipment_code"],
+            "client_name": custody["client_name"],
+            "days_without_treatment": treatment_info["days_without_treatment"],
+            "days_until_return": treatment_info["days_until_return"],
+            "message": f"A remessa {custody['shipment_code']} está há {treatment_info['days_without_treatment']} dias sem retorno. Faltam {treatment_info['days_until_return']} dias para poder devolver."
+        })
+    
+    # Get custodies ready for return (10+ days)
+    return_custodies = await db.custodies.find({
+        "$or": [
+            {"status": "ready_for_return"},
+            {"status": {"$nin": ["resolved", "ready_for_return"]}, "last_treatment_at": {"$lt": return_threshold}}
+        ]
+    }, {"_id": 0}).to_list(100)
+    
+    for custody in return_custodies:
+        treatment_info = calculate_days_without_treatment(custody)
+        alerts.append({
+            "type": "return",
+            "custody_id": custody["id"],
+            "box_number": custody.get("box_number", "N/A"),
+            "shipment_code": custody["shipment_code"],
+            "client_name": custody["client_name"],
+            "days_without_treatment": treatment_info["days_without_treatment"],
+            "days_until_return": 0,
+            "message": f"A remessa {custody['shipment_code']} está há {treatment_info['days_without_treatment']} dias sem tratativa do CO emissor e pode ser devolvida."
+        })
+        
+        # Auto-update status to ready_for_return if not already
+        if custody.get("status") != "ready_for_return":
+            await db.custodies.update_one(
+                {"id": custody["id"]},
+                {
+                    "$set": {"status": "ready_for_return", "updated_at": datetime.now(timezone.utc).isoformat()},
+                    "$push": {"history": {
+                        "action": "auto_status_change",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "user_id": "system",
+                        "user_name": "Sistema",
+                        "details": f"Status alterado automaticamente para 'Apta para Devolução' - {treatment_info['days_without_treatment']} dias sem tratativa"
+                    }}
+                }
+            )
+    
+    return sorted(alerts, key=lambda x: x["days_without_treatment"], reverse=True)
 
 @api_router.get("/custodies/{custody_id}")
 async def get_custody(custody_id: str, request: Request):
@@ -376,6 +543,11 @@ async def get_custody(custody_id: str, request: Request):
     custody = await db.custodies.find_one({"id": custody_id}, {"_id": 0})
     if not custody:
         raise HTTPException(status_code=404, detail="Custody not found")
+    
+    # Add treatment info
+    treatment_info = calculate_days_without_treatment(custody)
+    custody.update(treatment_info)
+    
     return custody
 
 @api_router.patch("/custodies/{custody_id}")
@@ -386,9 +558,10 @@ async def update_custody(custody_id: str, data: CustodyUpdate, request: Request)
     if not custody:
         raise HTTPException(status_code=404, detail="Custody not found")
     
-    update_data = {"updated_at": datetime.now(timezone.utc).isoformat()}
+    now = datetime.now(timezone.utc).isoformat()
+    update_data = {"updated_at": now, "last_treatment_at": now}
     history_entry = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": now,
         "user_id": user["id"],
         "user_name": user["name"]
     }
@@ -415,6 +588,11 @@ async def update_custody(custody_id: str, data: CustodyUpdate, request: Request)
     )
     
     updated = await db.custodies.find_one({"id": custody_id}, {"_id": 0})
+    
+    # Add treatment info
+    treatment_info = calculate_days_without_treatment(updated)
+    updated.update(treatment_info)
+    
     return updated
 
 # Photo Upload Endpoint
@@ -535,14 +713,18 @@ async def export_custodies_csv(
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow([
-        "Data/Hora", "Código Remessa", "Cliente", "Telefone", "Endereço",
-        "Ocorrência", "Observação", "Status", "Responsável", "Fotos"
+        "Data/Hora", "Nº Caixa", "Volume", "Código Remessa", "Cliente", "Telefone", "Endereço",
+        "Ocorrência", "Observação", "Status", "Responsável", "Dias sem Tratativa", "Fotos"
     ])
     
     for c in custodies:
         photo_links = ", ".join([p.get("storage_path", "") for p in c.get("photos", [])])
+        treatment_info = calculate_days_without_treatment(c)
+        volume = f"{c.get('volume_current', 1)}/{c.get('volume_total', 1)}"
         writer.writerow([
             c.get("created_at", ""),
+            c.get("box_number", ""),
+            volume,
             c.get("shipment_code", ""),
             c.get("client_name", ""),
             c.get("phone", ""),
@@ -551,6 +733,7 @@ async def export_custodies_csv(
             c.get("observation", ""),
             c.get("status", ""),
             c.get("responsible_name", ""),
+            treatment_info["days_without_treatment"],
             photo_links
         ])
     
@@ -562,6 +745,24 @@ async def export_custodies_csv(
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=custodias.csv"}
     )
+
+# Generate label endpoint
+@api_router.get("/custodies/{custody_id}/label")
+async def get_custody_label(custody_id: str, request: Request):
+    await get_current_user(request)
+    
+    custody = await db.custodies.find_one({"id": custody_id}, {"_id": 0})
+    if not custody:
+        raise HTTPException(status_code=404, detail="Custody not found")
+    
+    return {
+        "box_number": custody.get("box_number", "N/A"),
+        "shipment_code": custody.get("shipment_code", ""),
+        "client_name": custody.get("client_name", ""),
+        "volume": f"{custody.get('volume_current', 1)}/{custody.get('volume_total', 1)}",
+        "created_at": custody.get("created_at", ""),
+        "qr_data": custody.get("box_number", custody_id)
+    }
 
 # Users list for filters
 @api_router.get("/users")

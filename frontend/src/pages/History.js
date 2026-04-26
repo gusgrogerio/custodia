@@ -13,7 +13,9 @@ import {
   Download,
   Filter,
   X,
-  Calendar as CalendarIcon
+  Calendar as CalendarIcon,
+  Box,
+  RotateCcw
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -49,6 +51,7 @@ const statusMap = {
   pending: { label: 'Pendente', class: 'status-pending', icon: Clock },
   resolved: { label: 'Resolvido', class: 'status-resolved', icon: CheckCircle2 },
   expired: { label: 'Vencido', class: 'status-expired', icon: AlertTriangle },
+  ready_for_return: { label: 'Apta Devolução', class: 'bg-red-500/20 text-red-400 border border-red-500/30', icon: RotateCcw },
 };
 
 const occurrenceTypes = {
@@ -379,9 +382,10 @@ export default function History() {
               <Table>
                 <TableHeader>
                   <TableRow className="border-slate-800 hover:bg-transparent">
+                    <TableHead className="text-slate-400 font-semibold">Nº Caixa</TableHead>
                     <TableHead className="text-slate-400 font-semibold">Código</TableHead>
                     <TableHead className="text-slate-400 font-semibold">Cliente</TableHead>
-                    <TableHead className="text-slate-400 font-semibold hidden sm:table-cell">Ocorrência</TableHead>
+                    <TableHead className="text-slate-400 font-semibold hidden sm:table-cell">Volume</TableHead>
                     <TableHead className="text-slate-400 font-semibold">Status</TableHead>
                     <TableHead className="text-slate-400 font-semibold hidden md:table-cell">Data/Hora</TableHead>
                     <TableHead className="text-slate-400 font-semibold hidden lg:table-cell">Responsável</TableHead>
@@ -391,22 +395,34 @@ export default function History() {
                 <TableBody>
                   {custodies.map((custody) => {
                     const status = getStatus(custody);
-                    const StatusIcon = statusMap[status].icon;
+                    const StatusIcon = statusMap[status]?.icon || Clock;
                     return (
                       <TableRow 
                         key={custody.id} 
-                        className="border-slate-800 hover:bg-slate-800/50 transition-colors"
+                        className={`border-slate-800 transition-colors ${
+                          custody.is_ready_for_return 
+                            ? 'bg-red-500/5 hover:bg-red-500/10' 
+                            : custody.is_near_return 
+                              ? 'bg-amber-500/5 hover:bg-amber-500/10'
+                              : 'hover:bg-slate-800/50'
+                        }`}
                         data-testid={`history-row-${custody.id}`}
                       >
+                        <TableCell className="font-mono text-blue-400 font-semibold">
+                          <div className="flex items-center gap-2">
+                            <Box className="w-4 h-4" />
+                            {custody.box_number || 'N/A'}
+                          </div>
+                        </TableCell>
                         <TableCell className="font-mono text-slate-200">{custody.shipment_code}</TableCell>
                         <TableCell className="text-slate-300">{custody.client_name}</TableCell>
                         <TableCell className="text-slate-400 hidden sm:table-cell">
-                          {occurrenceTypes[custody.occurrence_type] || custody.occurrence_type}
+                          {custody.volume_current || 1}/{custody.volume_total || 1}
                         </TableCell>
                         <TableCell>
-                          <Badge className={`${statusMap[status].class} gap-1`}>
+                          <Badge className={`${statusMap[status]?.class || 'status-pending'} gap-1`}>
                             <StatusIcon className="w-3 h-3" />
-                            {statusMap[status].label}
+                            {statusMap[status]?.label || 'Pendente'}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-slate-400 hidden md:table-cell">

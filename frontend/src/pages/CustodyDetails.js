@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
@@ -17,7 +17,11 @@ import {
   Image as ImageIcon,
   Send,
   Loader2,
-  History
+  History,
+  Box,
+  Printer,
+  RotateCcw,
+  Bell
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -30,7 +34,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '../components/ui/dialog';
 import { toast } from 'sonner';
+import { QRCodeSVG } from 'qrcode.react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -38,6 +49,7 @@ const statusMap = {
   pending: { label: 'Pendente', class: 'status-pending', icon: Clock },
   resolved: { label: 'Resolvido', class: 'status-resolved', icon: CheckCircle2 },
   expired: { label: 'Vencido', class: 'status-expired', icon: AlertTriangle },
+  ready_for_return: { label: 'Apta Devolução', class: 'bg-red-500/20 text-red-400 border border-red-500/30', icon: RotateCcw },
 };
 
 const occurrenceTypes = {
@@ -51,6 +63,137 @@ const occurrenceTypes = {
   'outro': 'Outro',
 };
 
+// Label component for printing
+function LabelPreview({ labelData, onPrint }) {
+  const labelRef = useRef(null);
+
+  const handlePrint = () => {
+    const printContent = labelRef.current;
+    const printWindow = window.open('', '', 'width=400,height=600');
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Etiqueta - ${labelData.box_number}</title>
+          <style>
+            body { 
+              font-family: Arial, sans-serif; 
+              padding: 20px;
+              margin: 0;
+            }
+            .label {
+              border: 2px solid #000;
+              padding: 20px;
+              max-width: 350px;
+              margin: 0 auto;
+            }
+            .header {
+              text-align: center;
+              border-bottom: 2px solid #000;
+              padding-bottom: 15px;
+              margin-bottom: 15px;
+            }
+            .box-number {
+              font-size: 28px;
+              font-weight: bold;
+              margin: 0;
+            }
+            .volume {
+              font-size: 18px;
+              color: #666;
+              margin-top: 5px;
+            }
+            .info {
+              margin-bottom: 15px;
+            }
+            .info-row {
+              display: flex;
+              justify-content: space-between;
+              margin-bottom: 8px;
+              font-size: 14px;
+            }
+            .info-label {
+              font-weight: bold;
+              color: #333;
+            }
+            .qr-container {
+              text-align: center;
+              padding-top: 15px;
+              border-top: 2px solid #000;
+            }
+            .qr-container svg {
+              margin: 0 auto;
+            }
+          </style>
+        </head>
+        <body>
+          ${printContent.innerHTML}
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+    printWindow.close();
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('pt-BR', { 
+      day: '2-digit', 
+      month: '2-digit', 
+      year: 'numeric'
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div 
+        ref={labelRef}
+        className="bg-white text-black p-6 rounded-lg border-2 border-black max-w-sm mx-auto"
+      >
+        <div className="label">
+          <div className="header text-center border-b-2 border-black pb-4 mb-4">
+            <p className="box-number text-3xl font-black">{labelData.box_number}</p>
+            <p className="volume text-lg text-gray-600 mt-1">Volume: {labelData.volume}</p>
+          </div>
+          
+          <div className="info space-y-3 mb-4">
+            <div className="info-row flex justify-between text-sm">
+              <span className="info-label font-bold">Código:</span>
+              <span className="font-mono">{labelData.shipment_code}</span>
+            </div>
+            <div className="info-row flex justify-between text-sm">
+              <span className="info-label font-bold">Cliente:</span>
+              <span>{labelData.client_name}</span>
+            </div>
+            <div className="info-row flex justify-between text-sm">
+              <span className="info-label font-bold">Data:</span>
+              <span>{formatDate(labelData.created_at)}</span>
+            </div>
+          </div>
+          
+          <div className="qr-container text-center border-t-2 border-black pt-4">
+            <QRCodeSVG 
+              value={labelData.qr_data || labelData.box_number} 
+              size={120}
+              level="M"
+            />
+            <p className="text-xs mt-2 text-gray-500">{labelData.box_number}</p>
+          </div>
+        </div>
+      </div>
+      
+      <div className="flex justify-center">
+        <Button onClick={handlePrint} className="bg-blue-600 hover:bg-blue-500">
+          <Printer className="w-4 h-4 mr-2" />
+          Imprimir Etiqueta
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export default function CustodyDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -60,6 +203,8 @@ export default function CustodyDetails() {
   const [updating, setUpdating] = useState(false);
   const [newObservation, setNewObservation] = useState('');
   const [photoUrls, setPhotoUrls] = useState({});
+  const [showLabelDialog, setShowLabelDialog] = useState(false);
+  const [labelData, setLabelData] = useState(null);
 
   const fetchCustody = async () => {
     try {
@@ -147,6 +292,21 @@ export default function CustodyDetails() {
     }
   };
 
+  const handleGenerateLabel = async () => {
+    try {
+      const headers = getAuthHeaders();
+      const response = await axios.get(`${API}/custodies/${id}/label`, {
+        withCredentials: true,
+        headers
+      });
+      setLabelData(response.data);
+      setShowLabelDialog(true);
+    } catch (error) {
+      console.error('Error generating label:', error);
+      toast.error('Erro ao gerar etiqueta');
+    }
+  };
+
   const formatDate = (dateString) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('pt-BR', { 
@@ -161,6 +321,7 @@ export default function CustodyDetails() {
   const getStatus = () => {
     if (!custody) return 'pending';
     if (custody.status === 'resolved') return 'resolved';
+    if (custody.status === 'ready_for_return' || custody.is_ready_for_return) return 'ready_for_return';
     const createdAt = new Date(custody.created_at);
     const now = new Date();
     const hoursDiff = (now - createdAt) / (1000 * 60 * 60);
@@ -183,13 +344,13 @@ export default function CustodyDetails() {
   }
 
   const status = getStatus();
-  const StatusIcon = statusMap[status].icon;
+  const StatusIcon = statusMap[status]?.icon || Clock;
 
   return (
     <Layout>
       <div className="max-w-4xl mx-auto space-y-6 animate-fadeIn">
         {/* Header */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center justify-between">
           <Button 
             variant="ghost" 
             size="sm"
@@ -200,31 +361,92 @@ export default function CustodyDetails() {
             <ArrowLeft className="w-4 h-4 mr-1" />
             Voltar
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleGenerateLabel}
+            className="border-slate-700 text-slate-300 hover:bg-slate-800"
+            data-testid="generate-label-button"
+          >
+            <Printer className="w-4 h-4 mr-2" />
+            Gerar Etiqueta
+          </Button>
         </div>
+
+        {/* Alert Banner */}
+        {(custody.is_near_return || custody.is_ready_for_return) && (
+          <div className={`rounded-xl p-4 flex items-start gap-3 ${
+            custody.is_ready_for_return 
+              ? 'bg-red-500/10 border border-red-500/20' 
+              : 'bg-amber-500/10 border border-amber-500/20'
+          }`}>
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+              custody.is_ready_for_return ? 'bg-red-500/20' : 'bg-amber-500/20'
+            }`}>
+              {custody.is_ready_for_return ? (
+                <RotateCcw className="w-5 h-5 text-red-400" />
+              ) : (
+                <Bell className="w-5 h-5 text-amber-400" />
+              )}
+            </div>
+            <div>
+              <span className={`text-sm font-semibold ${
+                custody.is_ready_for_return ? 'text-red-400' : 'text-amber-400'
+              }`}>
+                {custody.is_ready_for_return 
+                  ? 'Custódia sem retorno há 10+ dias - Apta para devolução' 
+                  : `Alerta: ${custody.days_without_treatment} dias sem tratativa`}
+              </span>
+              {custody.days_until_return > 0 && (
+                <p className="text-sm text-slate-400 mt-1">
+                  Faltam {custody.days_until_return} dias para poder devolver
+                </p>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Main Info */}
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
             <div>
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-blue-600/20 rounded-lg flex items-center justify-center">
-                  <Package className="w-5 h-5 text-blue-400" />
+                <div className="w-12 h-12 bg-blue-600/20 rounded-lg flex items-center justify-center">
+                  <Box className="w-6 h-6 text-blue-400" />
                 </div>
                 <div>
-                  <h1 className="text-xl sm:text-2xl font-black text-slate-50 font-['Chivo']">
-                    {custody.shipment_code}
-                  </h1>
-                  <p className="text-sm text-slate-400">{custody.client_name}</p>
+                  <p className="text-2xl font-black text-blue-400 font-mono">
+                    {custody.box_number || 'N/A'}
+                  </p>
+                  <p className="text-sm text-slate-400">
+                    Volume: {custody.volume_current || 1}/{custody.volume_total || 1}
+                  </p>
                 </div>
               </div>
             </div>
-            <Badge className={`${statusMap[status].class} gap-1 self-start`}>
+            <Badge className={`${statusMap[status]?.class || 'status-pending'} gap-1 self-start`}>
               <StatusIcon className="w-3 h-3" />
-              {statusMap[status].label}
+              {statusMap[status]?.label || 'Pendente'}
             </Badge>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="flex items-start gap-3">
+              <Package className="w-4 h-4 text-slate-500 mt-0.5" />
+              <div>
+                <p className="text-xs text-slate-500 uppercase tracking-wider">Código Remessa</p>
+                <p className="text-slate-200 font-mono">{custody.shipment_code}</p>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3">
+              <User className="w-4 h-4 text-slate-500 mt-0.5" />
+              <div>
+                <p className="text-xs text-slate-500 uppercase tracking-wider">Cliente</p>
+                <p className="text-slate-200">{custody.client_name}</p>
+              </div>
+            </div>
+
             <div className="flex items-start gap-3">
               <FileText className="w-4 h-4 text-slate-500 mt-0.5" />
               <div>
@@ -266,6 +488,22 @@ export default function CustodyDetails() {
               <div>
                 <p className="text-xs text-slate-500 uppercase tracking-wider">Responsável</p>
                 <p className="text-slate-200">{custody.responsible_name}</p>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3">
+              <Clock className="w-4 h-4 text-slate-500 mt-0.5" />
+              <div>
+                <p className="text-xs text-slate-500 uppercase tracking-wider">Dias sem Tratativa</p>
+                <p className={`font-semibold ${
+                  custody.days_without_treatment >= 10 
+                    ? 'text-red-400' 
+                    : custody.days_without_treatment >= 8 
+                      ? 'text-amber-400' 
+                      : 'text-slate-200'
+                }`}>
+                  {custody.days_without_treatment || 0} dias
+                </p>
               </div>
             </div>
           </div>
@@ -332,6 +570,7 @@ export default function CustodyDetails() {
                 <SelectContent className="bg-slate-900 border-slate-700">
                   <SelectItem value="pending" className="text-slate-200">Pendente</SelectItem>
                   <SelectItem value="resolved" className="text-slate-200">Resolvido</SelectItem>
+                  <SelectItem value="ready_for_return" className="text-slate-200">Apta para Devolução</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -377,12 +616,22 @@ export default function CustodyDetails() {
                   key={index}
                   className="flex items-start gap-3 pb-4 border-b border-slate-800 last:border-0 last:pb-0"
                 >
-                  <div className="w-8 h-8 bg-slate-800 rounded-full flex items-center justify-center flex-shrink-0">
-                    <User className="w-4 h-4 text-slate-400" />
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                    entry.user_id === 'system' ? 'bg-amber-500/20' : 'bg-slate-800'
+                  }`}>
+                    {entry.user_id === 'system' ? (
+                      <Bell className="w-4 h-4 text-amber-400" />
+                    ) : (
+                      <User className="w-4 h-4 text-slate-400" />
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-medium text-slate-200">{entry.user_name}</span>
+                      <span className={`text-sm font-medium ${
+                        entry.user_id === 'system' ? 'text-amber-400' : 'text-slate-200'
+                      }`}>
+                        {entry.user_name}
+                      </span>
                       <span className="text-xs text-slate-500">{formatDate(entry.timestamp)}</span>
                     </div>
                     <p className="text-sm text-slate-400 mt-1">{entry.details}</p>
@@ -393,6 +642,16 @@ export default function CustodyDetails() {
           </div>
         )}
       </div>
+
+      {/* Label Dialog */}
+      <Dialog open={showLabelDialog} onOpenChange={setShowLabelDialog}>
+        <DialogContent className="bg-slate-900 border-slate-800 max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-slate-50">Etiqueta da Caixa</DialogTitle>
+          </DialogHeader>
+          {labelData && <LabelPreview labelData={labelData} />}
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 }

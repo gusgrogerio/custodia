@@ -116,6 +116,7 @@ export default function NewCustody() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(null);
+  const [createdCustody, setCreatedCustody] = useState(null);
   
   const [formData, setFormData] = useState({
     shipment_code: '',
@@ -124,6 +125,8 @@ export default function NewCustody() {
     address: '',
     occurrence_type: '',
     observation: '',
+    volume_current: 1,
+    volume_total: 1,
   });
 
   const [photos, setPhotos] = useState({
@@ -174,6 +177,7 @@ export default function NewCustody() {
       });
       
       const custodyId = response.data.id;
+      setCreatedCustody(response.data);
 
       // Upload photos
       for (const [type, photo] of Object.entries(photos)) {
@@ -299,6 +303,35 @@ export default function NewCustody() {
                 className="bg-slate-950 border-slate-700 text-slate-100 placeholder:text-slate-600 focus:border-blue-500"
                 data-testid="address-input"
               />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="volume_current" className="text-slate-300">Volume Atual</Label>
+                <Input
+                  id="volume_current"
+                  type="number"
+                  min="1"
+                  placeholder="1"
+                  value={formData.volume_current}
+                  onChange={(e) => handleChange('volume_current', parseInt(e.target.value) || 1)}
+                  className="bg-slate-950 border-slate-700 text-slate-100 placeholder:text-slate-600 focus:border-blue-500"
+                  data-testid="volume-current-input"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="volume_total" className="text-slate-300">Total de Volumes</Label>
+                <Input
+                  id="volume_total"
+                  type="number"
+                  min="1"
+                  placeholder="1"
+                  value={formData.volume_total}
+                  onChange={(e) => handleChange('volume_total', parseInt(e.target.value) || 1)}
+                  className="bg-slate-950 border-slate-700 text-slate-100 placeholder:text-slate-600 focus:border-blue-500"
+                  data-testid="volume-total-input"
+                />
+              </div>
             </div>
 
             <div className="space-y-2">

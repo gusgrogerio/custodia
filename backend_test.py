@@ -96,7 +96,7 @@ class D1CustodiaAPITester:
         return success
 
     def test_get_stats(self):
-        """Test custody statistics"""
+        """Test custody statistics with new fields"""
         success, response = self.run_test(
             "Get Custody Stats",
             "GET",
@@ -104,7 +104,24 @@ class D1CustodiaAPITester:
             200
         )
         if success:
-            print(f"   Stats: Total Today: {response.get('total_today', 0)}, Pending: {response.get('pending', 0)}, Resolved: {response.get('resolved', 0)}, Expired: {response.get('expired', 0)}")
+            total_today = response.get('total_today', 0)
+            pending = response.get('pending', 0)
+            resolved = response.get('resolved', 0)
+            expired = response.get('expired', 0)
+            near_return = response.get('near_return', 0)
+            ready_for_return = response.get('ready_for_return', 0)
+            
+            print(f"   Stats: Total Today: {total_today}, Pending: {pending}, Resolved: {resolved}")
+            print(f"   Expired: {expired}, Near Return: {near_return}, Ready for Return: {ready_for_return}")
+            
+            # Verify all required fields are present
+            required_fields = ['total_today', 'pending', 'resolved', 'expired', 'near_return', 'ready_for_return']
+            missing_fields = [field for field in required_fields if field not in response]
+            if missing_fields:
+                print(f"   ❌ Missing fields in stats: {missing_fields}")
+                return False
+            else:
+                print(f"   ✅ All required stats fields present")
         return success
 
     def test_list_custodies(self):
@@ -120,18 +137,20 @@ class D1CustodiaAPITester:
         return success
 
     def test_create_custody(self):
-        """Test create new custody"""
+        """Test create new custody with volume fields"""
         test_data = {
             "shipment_code": f"TEST{datetime.now().strftime('%Y%m%d%H%M%S')}",
             "client_name": "Cliente Teste",
             "phone": "(11) 99999-9999",
             "address": "Rua Teste, 123 - São Paulo, SP",
             "occurrence_type": "cliente_ausente",
-            "observation": "Teste automatizado - cliente não estava presente"
+            "observation": "Teste automatizado - cliente não estava presente",
+            "volume_current": 2,
+            "volume_total": 3
         }
         
         success, response = self.run_test(
-            "Create Custody",
+            "Create Custody with Volume Fields",
             "POST",
             "custodies",
             200,
@@ -139,12 +158,27 @@ class D1CustodiaAPITester:
         )
         if success and 'id' in response:
             self.custody_id = response['id']
+            box_number = response.get('box_number', 'N/A')
+            volume_current = response.get('volume_current', 0)
+            volume_total = response.get('volume_total', 0)
+            days_without_treatment = response.get('days_without_treatment', 0)
             print(f"   Created custody ID: {self.custody_id}")
+            print(f"   Auto-generated box_number: {box_number}")
+            print(f"   Volume: {volume_current}/{volume_total}")
+            print(f"   Days without treatment: {days_without_treatment}")
+            
+            # Verify box number format (CX-YYYYMMDD-NNN)
+            if box_number and box_number.startswith('CX-') and len(box_number.split('-')) == 3:
+                print(f"   ✅ Box number format is correct: {box_number}")
+            else:
+                print(f"   ❌ Box number format is incorrect: {box_number}")
+                return False
+                
             return True
         return False
 
     def test_get_custody(self):
-        """Test get specific custody"""
+        """Test get specific custody with new fields"""
         if not self.custody_id:
             print("❌ No custody ID available for testing")
             return False
@@ -156,7 +190,26 @@ class D1CustodiaAPITester:
             200
         )
         if success:
-            print(f"   Custody: {response.get('shipment_code', 'Unknown')} - {response.get('client_name', 'Unknown')}")
+            shipment_code = response.get('shipment_code', 'Unknown')
+            client_name = response.get('client_name', 'Unknown')
+            box_number = response.get('box_number', 'N/A')
+            volume_current = response.get('volume_current', 0)
+            volume_total = response.get('volume_total', 0)
+            days_without_treatment = response.get('days_without_treatment', 0)
+            
+            print(f"   Custody: {shipment_code} - {client_name}")
+            print(f"   Box Number: {box_number}")
+            print(f"   Volume: {volume_current}/{volume_total}")
+            print(f"   Days without treatment: {days_without_treatment}")
+            
+            # Verify required new fields are present
+            required_fields = ['box_number', 'volume_current', 'volume_total', 'days_without_treatment']
+            missing_fields = [field for field in required_fields if field not in response]
+            if missing_fields:
+                print(f"   ❌ Missing fields: {missing_fields}")
+                return False
+            else:
+                print(f"   ✅ All required fields present")
         return success
 
     def test_update_custody_status(self):
@@ -203,16 +256,66 @@ class D1CustodiaAPITester:
             print(f"   Found {len(response)} users")
         return success
 
-    def test_export_csv(self):
-        """Test CSV export"""
+    def test_get_alerts(self):
+        """Test custody alerts"""
         success, response = self.run_test(
-            "Export CSV",
+            "Get Custody Alerts",
+            "GET",
+            "custodies/alerts",
+            200
+        )
+        if success:
+            print(f"   Found {len(response)} alerts")
+            for alert in response[:3]:  # Show first 3 alerts
+                alert_type = alert.get('type', 'unknown')
+                box_number = alert.get('box_number', 'N/A')
+                days = alert.get('days_without_treatment', 0)
+                print(f"   Alert: {alert_type} - Box {box_number} - {days} days")
+        return success
+
+    def test_get_label(self):
+        """Test custody label generation"""
+        if not self.custody_id:
+            print("❌ No custody ID available for testing")
+            return False
+            
+        success, response = self.run_test(
+            "Get Custody Label",
+            "GET",
+            f"custodies/{self.custody_id}/label",
+            200
+        )
+        if success:
+            box_number = response.get('box_number', 'N/A')
+            shipment_code = response.get('shipment_code', 'Unknown')
+            volume = response.get('volume', 'N/A')
+            qr_data = response.get('qr_data', 'N/A')
+            
+            print(f"   Label data: Box {box_number}, Code {shipment_code}")
+            print(f"   Volume: {volume}, QR Data: {qr_data}")
+            
+            # Verify required label fields
+            required_fields = ['box_number', 'shipment_code', 'client_name', 'volume', 'qr_data']
+            missing_fields = [field for field in required_fields if field not in response]
+            if missing_fields:
+                print(f"   ❌ Missing label fields: {missing_fields}")
+                return False
+            else:
+                print(f"   ✅ All required label fields present")
+        return success
+
+    def test_export_csv(self):
+        """Test CSV export with new columns"""
+        success, response = self.run_test(
+            "Export CSV with New Columns",
             "GET",
             "custodies/export/csv",
             200
         )
         if success:
             print(f"   CSV export successful")
+            # Note: CSV content validation would require parsing the response
+            # For now, we just verify the endpoint returns 200
         return success
 
     def test_logout(self):
@@ -239,8 +342,10 @@ def main():
         ("Get Current User", tester.test_get_me),
         ("Get Stats", tester.test_get_stats),
         ("List Custodies", tester.test_list_custodies),
+        ("Get Alerts", tester.test_get_alerts),
         ("Create Custody", tester.test_create_custody),
         ("Get Custody Details", tester.test_get_custody),
+        ("Get Label", tester.test_get_label),
         ("Update Custody Status", tester.test_update_custody_status),
         ("Add Observation", tester.test_add_observation),
         ("List Users", tester.test_list_users),
