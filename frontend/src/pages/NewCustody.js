@@ -278,12 +278,12 @@ export default function NewCustody() {
                   >
                     <SelectValue placeholder="Selecione o tipo" />
                   </SelectTrigger>
-                  <SelectContent className="bg-slate-900 border-slate-700">
+                  <SelectContent className="bg-slate-900 border-slate-700 z-50">
                     {occurrenceTypes.map((type) => (
                       <SelectItem 
                         key={type.value} 
                         value={type.value}
-                        className="text-slate-200 focus:bg-slate-800 focus:text-slate-100"
+                        className="text-slate-200 focus:bg-slate-800 focus:text-slate-100 cursor-pointer"
                       >
                         {type.label}
                       </SelectItem>
