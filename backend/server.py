@@ -939,7 +939,7 @@ async def export_custodies_csv(
     writer = csv.writer(output)
     writer.writerow([
         "Data/Hora", "Nº Caixa", "Volume", "Código Remessa", "Cliente", "Telefone", "Endereço",
-        "Ocorrência", "Observação", "Status", "Responsável", "Dias sem Tratativa", "Fotos"
+        "Cidade", "UF", "Região", "Ocorrência", "Observação", "Status", "Responsável", "Dias sem Tratativa", "Fotos"
     ])
     
     for c in custodies:
@@ -954,6 +954,9 @@ async def export_custodies_csv(
             c.get("client_name", ""),
             c.get("phone", ""),
             c.get("address", ""),
+            c.get("city", ""),
+            c.get("state", ""),
+            c.get("region", ""),
             c.get("occurrence_type", ""),
             c.get("observation", ""),
             c.get("status", ""),

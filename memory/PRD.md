@@ -8,6 +8,7 @@ Criar uma aplicação web responsiva chamada "D1 Custódia" para operação log�
 - Funcionalidades de Caixa e Alertas: 27/04/2026
 - Central de Custódias: 27/04/2026
 - Tabs por Região + Busca em Tempo Real + Validação Região: 27/04/2026
+- **Operação Isolada por Região (RegionContext global)**: 27/04/2026
 
 ## Arquitetura
 
@@ -93,6 +94,19 @@ Criar uma aplicação web responsiva chamada "D1 Custódia" para operação log�
 - [x] **Endpoint GET /api/custodies/region-stats** (totais e atrasos por região)
 - [x] **Campo Região OBRIGATÓRIO no cadastro** (validação client-side + server-side 400)
 - [x] **Testes automatizados**: `/app/backend/tests/test_region_features.py` (14/14 ✅)
+
+### Fase 5 - Operação Isolada por Região (27/04/2026)
+- [x] **RegionContext global** (`/app/frontend/src/context/RegionContext.js`) com persistência em localStorage (`d1_active_region`, default Guarulhos)
+- [x] **RegionSwitcher** (`/app/frontend/src/components/RegionSwitcher.js`) — tabs fixas no sidebar (desktop) e header (mobile)
+- [x] **Dashboard isolada por região** com card "Total Hoje" filtrado pela região ativa
+- [x] **Histórico isolado** — busca, exportação e contagem aplicam região
+- [x] **Central isolada** — removidas tabs locais (agora controle global do Layout)
+- [x] **Backend filtro `region`** em `/custodies/stats`, `/custodies/alerts`, `/custodies/central-stats`, `/custodies/export/csv`
+- [x] **Índices MongoDB** em `region`, `(region, created_at)`, `(region, status)` para performance
+- [x] **CSV exportado** inclui colunas `Cidade`, `UF`, `Região` (auto-documentado)
+- [x] **Troca instantânea** entre regiões sem reload (sincronização entre abas via `storage` event)
+- [x] **Headings dinâmicos** ("Dashboard · Guarulhos", "Central de Custódias · São Paulo")
+- [x] **Testes automatizados**: `/app/backend/tests/test_region_iter5.py` (8/9 ✅, 100% frontend)
 
 ## Status Disponíveis
 - `pending` - Em andamento
