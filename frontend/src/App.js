@@ -7,15 +7,15 @@ import { Toaster } from "./components/ui/sonner";
 
 // Pages
 import Login from "./pages/Login";
-import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import NewCustody from "./pages/NewCustody";
 import History from "./pages/History";
 import CustodyDetails from "./pages/CustodyDetails";
 import Profile from "./pages/Profile";
 import CentralCustodias from "./pages/CentralCustodias";
+import UserManagement from "./pages/UserManagement";
+import AuditLogs from "./pages/AuditLogs";
 
-// Loading component
 function LoadingScreen() {
   return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center">
@@ -27,108 +27,46 @@ function LoadingScreen() {
   );
 }
 
-// Protected Route component
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
-
-  if (loading) {
-    return <LoadingScreen />;
-  }
-
-  if (!user) {
-    return <Navigate to="/login" replace />;
-  }
-
+  if (loading) return <LoadingScreen />;
+  if (!user) return <Navigate to="/login" replace />;
   return children;
 }
 
-// Public Route component (redirect to dashboard if authenticated)
+function AdminRoute({ children }) {
+  const { user, loading, isAdmin } = useAuth();
+  if (loading) return <LoadingScreen />;
+  if (!user) return <Navigate to="/login" replace />;
+  if (!isAdmin) return <Navigate to="/dashboard" replace />;
+  return children;
+}
+
 function PublicRoute({ children }) {
   const { user, loading } = useAuth();
-
-  if (loading) {
-    return <LoadingScreen />;
-  }
-
-  if (user) {
-    return <Navigate to="/dashboard" replace />;
-  }
-
+  if (loading) return <LoadingScreen />;
+  if (user) return <Navigate to="/dashboard" replace />;
   return children;
 }
 
 function AppRoutes() {
   return (
     <Routes>
-      {/* Public Routes */}
-      <Route 
-        path="/login" 
-        element={
-          <PublicRoute>
-            <Login />
-          </PublicRoute>
-        } 
-      />
-      <Route 
-        path="/register" 
-        element={
-          <PublicRoute>
-            <Register />
-          </PublicRoute>
-        } 
-      />
+      <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+      {/* /register is intentionally removed — closed system */}
+      <Route path="/register" element={<Navigate to="/login" replace />} />
 
-      {/* Protected Routes */}
-      <Route 
-        path="/dashboard" 
-        element={
-          <ProtectedRoute>
-            <Dashboard />
-          </ProtectedRoute>
-        } 
-      />
-      <Route 
-        path="/nova-custodia" 
-        element={
-          <ProtectedRoute>
-            <NewCustody />
-          </ProtectedRoute>
-        } 
-      />
-      <Route 
-        path="/historico" 
-        element={
-          <ProtectedRoute>
-            <History />
-          </ProtectedRoute>
-        } 
-      />
-      <Route 
-        path="/central" 
-        element={
-          <ProtectedRoute>
-            <CentralCustodias />
-          </ProtectedRoute>
-        } 
-      />
-      <Route 
-        path="/custodia/:id" 
-        element={
-          <ProtectedRoute>
-            <CustodyDetails />
-          </ProtectedRoute>
-        } 
-      />
-      <Route 
-        path="/perfil" 
-        element={
-          <ProtectedRoute>
-            <Profile />
-          </ProtectedRoute>
-        } 
-      />
+      <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+      <Route path="/nova-custodia" element={<ProtectedRoute><NewCustody /></ProtectedRoute>} />
+      <Route path="/historico" element={<ProtectedRoute><History /></ProtectedRoute>} />
+      <Route path="/central" element={<ProtectedRoute><CentralCustodias /></ProtectedRoute>} />
+      <Route path="/custodia/:id" element={<ProtectedRoute><CustodyDetails /></ProtectedRoute>} />
+      <Route path="/perfil" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
 
-      {/* Default redirect */}
+      {/* Admin-only */}
+      <Route path="/usuarios" element={<AdminRoute><UserManagement /></AdminRoute>} />
+      <Route path="/auditoria" element={<AdminRoute><AuditLogs /></AdminRoute>} />
+
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
@@ -141,7 +79,7 @@ function App() {
       <RegionProvider>
         <BrowserRouter>
           <AppRoutes />
-          <Toaster 
+          <Toaster
             position="top-right"
             toastOptions={{
               style: {

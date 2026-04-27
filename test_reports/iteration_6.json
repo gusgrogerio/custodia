@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 6 validates the closed-system RBAC + brute-force lockout + audit log work for D1 Custódia. Backend: 20/20 pytest cases passed (test_rbac_iter6.py) covering closed registration (403), generic 401, lockout 423 after 5 fails, success clears counter, /api/users CRUD with admin/operator + region/password validations, soft-delete, self-deactivation guard, inactive-login 401, operator custody RBAC (own region 200, other 403, PATCH other-region 403), audit log listing + admin-only + filter. Frontend: admin dashboard shows Usuários + Auditoria menu items; operator nav hides them and /usuarios + /auditoria redirect to /dashboard; region-locked element is rendered with Guarulhos label; bad login → 401 red banner; lockout → 423 amber/yellow banner with the lockout message; user-management dialog creates a user via UI (POST /users → 201); login footer reads 'Sistema fechado · Solicite acesso ao administrador.' (no register link).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "PATCH /api/users/{id}", "issue": "When changing role to 'operator' WITHOUT providing region in the same payload, the endpoint does NOT enforce that the user has a region. Region is only validated when data.region is present (line 1181). Result: a user could become operator with a stale/null region. Recommend validating after merging fields: if final role==operator and (current_region or new_region) not in VALID_REGIONS → 400."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "DialogContent (radix-ui) on UserManagement", "issue": "Console warning: 'Missing Description or aria-describedby={undefined} for {DialogContent}'. Add a <DialogDescription> for accessibility.", "selector": "[data-testid='new-user-button'] dialog", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_rbac_iter6.py",
+    "/app/test_reports/pytest/iteration6.xml"
+  ],
+  "action_items": [
+    "(Optional/Minor) Tighten PATCH /api/users/{id} region validation: when final role is 'operator', the merged region must be in VALID_REGIONS regardless of whether 'region' was sent in the patch body.",
+    "(Optional/Minor) Add DialogDescription to the 'New/Edit User' dialog to silence the radix accessibility warning."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now 1374 lines — should be split (auth.py / users.py / audit.py / custodies.py / exports.py). This was already flagged in iter5 but has only grown.",
+    "PATCH /users region validation is partial (see backend.minor): the rule 'operator must have region' is only enforced when client sends region in the patch body; missing path 'role:operator-only patch' lets a user become operator without re-validating existing region.",
+    "POST /users always returns 201 even for first-time admin creation, while in audit logs we record 'user_created' with role/region. Consider also auditing failed creation attempts (currently silent).",
+    "/api/audit-logs has no max cap on 'limit' param — a caller could request limit=100000. Add an upper bound (e.g., min(limit, 500)).",
+    "/auth/login generic message is good, but response also leaks state: a successful login returns is_active=true while inactive users get a generic 401. That is correct, but record_login_attempt() is called even on invalid email — which means the brute-force lockout works on emails that don't exist (correct/desired). Confirmed via test."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_rbac_iter6.py",
+    "/app/test_reports/iteration_6.json",
+    "/app/test_reports/pytest/iteration6.xml"
+  ],
+  "success_rate": {"backend": "100% (20/20)", "frontend": "100% on tested flows"},
+  "test_credentials": "admin / 123456789 (from /app/memory/test_credentials.md); operador.gru@d1.com / opgru123 (still working — was not locked because brute-force test used unique TEST_ emails).",
+  "seed_data_creation": "Created several TEST_* users during pytest — all are deactivated by tests' cleanup or by post-run sweep. Two TEST_ui_* users created via UI smoke were also cleaned up via DELETE /api/users.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "RBAC + closed system + lockout + audit log all verified end-to-end. operador.gru@d1.com is preserved active for future iterations. The brute-force test strategy uses unique random emails so it never locks real accounts. Login UI styles: red = 401 generic ('Acesso não autorizado...'), amber/yellow = 423 lockout. /register route always lands on /login.",
+  "rca of the issue": "N/A — no critical bugs found. One minor logical gap in PATCH /users role-change region validation noted as action item."
+}

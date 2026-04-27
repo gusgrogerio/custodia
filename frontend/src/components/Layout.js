@@ -12,12 +12,15 @@ import {
   Package,
   Menu,
   X,
-  Boxes
+  Boxes,
+  Users as UsersIcon,
+  ScrollText,
+  ShieldCheck
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { useState } from 'react';
 
-const navItems = [
+const baseNavItems = [
   { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { path: '/central', icon: Boxes, label: 'Central' },
   { path: '/nova-custodia', icon: PlusCircle, label: 'Nova Custódia' },
@@ -25,12 +28,19 @@ const navItems = [
   { path: '/perfil', icon: User, label: 'Perfil' },
 ];
 
+const adminNavItems = [
+  { path: '/usuarios', icon: UsersIcon, label: 'Usuários' },
+  { path: '/auditoria', icon: ScrollText, label: 'Auditoria' },
+];
+
 export default function Layout({ children }) {
-  const { logout, user } = useAuth();
+  const { logout, user, isAdmin } = useAuth();
   const { activeRegion } = useRegion();
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const navItems = isAdmin ? [...baseNavItems, ...adminNavItems] : baseNavItems;
 
   const handleLogout = async () => {
     await logout();
@@ -93,7 +103,12 @@ export default function Layout({ children }) {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-slate-200 truncate">{user?.name}</p>
-              <p className="text-xs text-slate-500 truncate">{user?.email}</p>
+              <div className="flex items-center gap-1 mt-0.5">
+                <ShieldCheck className={`w-3 h-3 ${isAdmin ? 'text-purple-400' : 'text-blue-400'}`} />
+                <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">
+                  {isAdmin ? 'Administrador' : `Operador · ${user?.region || 'Sem região'}`}
+                </p>
+              </div>
             </div>
           </div>
           <Button 

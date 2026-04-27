@@ -82,9 +82,15 @@ async def get_current_user(request: Request) -> dict:
         user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
+        if user.get("is_active") is False:
+            raise HTTPException(status_code=401, detail=GENERIC_AUTH_ERROR if "GENERIC_AUTH_ERROR" in globals() else "Inativo")
         user["id"] = str(user["_id"])
         del user["_id"]
         user.pop("password_hash", None)
+        # Defaults for legacy users
+        user.setdefault("role", "operator")
+        user.setdefault("region", None)
+        user.setdefault("is_active", True)
         return user
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
@@ -147,10 +153,19 @@ class UserLogin(BaseModel):
     email: str
     password: str
 
-class UserRegister(BaseModel):
+class UserCreate(BaseModel):
     email: str
     password: str
     name: str
+    role: str = "operator"          # "admin" | "operator"
+    region: Optional[str] = None    # required when role == "operator"
+
+class UserUpdate(BaseModel):
+    name: Optional[str] = None
+    role: Optional[str] = None
+    region: Optional[str] = None
+    is_active: Optional[bool] = None
+    password: Optional[str] = None  # admin can reset
 
 class UserResponse(BaseModel):
     id: str
@@ -165,7 +180,7 @@ class CustodyCreate(BaseModel):
     address: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
-    region: str = "São Paulo"  # "São Paulo" or "Guarulhos"
+    region: str = ""  # required at runtime - "São Paulo" or "Guarulhos"
     occurrence_type: str
     observation: Optional[str] = None
     volume_current: int = 1
@@ -181,6 +196,70 @@ class BulkUpdateRequest(BaseModel):
     custody_ids: List[str]
     action: str  # mark_returned, update_responsible
     responsible_id: Optional[str] = None
+
+# ---- Auth helpers (RBAC + brute-force + audit) ----
+
+VALID_ROLES = {"admin", "operator"}
+VALID_REGIONS = {"São Paulo", "Guarulhos"}
+LOCKOUT_MAX_ATTEMPTS = 5
+LOCKOUT_WINDOW_MIN = 15
+GENERIC_AUTH_ERROR = "Acesso não autorizado. Procure o administrador."
+
+def get_client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for", "")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+async def log_audit(action: str, *, user: Optional[dict] = None, details: str = "",
+                    ip: Optional[str] = None, target_id: Optional[str] = None):
+    """Persist an audit log entry. Never fails the request."""
+    try:
+        await db.audit_logs.insert_one({
+            "action": action,
+            "user_id": (user or {}).get("id"),
+            "user_email": (user or {}).get("email"),
+            "user_name": (user or {}).get("name"),
+            "details": details,
+            "ip": ip,
+            "target_id": target_id,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        })
+    except Exception as e:
+        logger.warning(f"audit log failed: {e}")
+
+async def is_locked_out(email: str) -> bool:
+    """Returns True if 5+ failed attempts in last 15 minutes for this email."""
+    window_start = (datetime.now(timezone.utc) - timedelta(minutes=LOCKOUT_WINDOW_MIN)).isoformat()
+    count = await db.login_attempts.count_documents({
+        "email": email,
+        "success": False,
+        "created_at": {"$gte": window_start}
+    })
+    return count >= LOCKOUT_MAX_ATTEMPTS
+
+async def record_login_attempt(email: str, ip: str, success: bool):
+    await db.login_attempts.insert_one({
+        "email": email,
+        "ip": ip,
+        "success": success,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
+
+async def clear_login_attempts(email: str):
+    await db.login_attempts.delete_many({"email": email, "success": False})
+
+async def require_admin(request: Request) -> dict:
+    user = await get_current_user(request)
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Apenas administradores podem executar esta ação.")
+    return user
+
+def can_modify_region(user: dict, region: str) -> bool:
+    """Admins can modify any region; operators only their own."""
+    if user.get("role") == "admin":
+        return True
+    return user.get("region") == region
 
 # Helper function to generate box number
 async def generate_box_number() -> str:
@@ -244,12 +323,36 @@ class CustodyResponse(BaseModel):
 
 # Auth Endpoints
 @api_router.post("/auth/login")
-async def login(data: UserLogin, response: Response):
+async def login(data: UserLogin, request: Request, response: Response):
     email = data.email.lower().strip()
+    ip = get_client_ip(request)
+    
+    # Brute-force lockout check
+    if await is_locked_out(email):
+        await log_audit("login_locked", user={"email": email}, ip=ip,
+                        details=f"Muitas tentativas inválidas ({LOCKOUT_MAX_ATTEMPTS}+ em {LOCKOUT_WINDOW_MIN}min)")
+        raise HTTPException(
+            status_code=423,
+            detail=f"Conta bloqueada temporariamente após {LOCKOUT_MAX_ATTEMPTS} tentativas inválidas. Aguarde {LOCKOUT_WINDOW_MIN} minutos."
+        )
+    
     user = await db.users.find_one({"email": email})
     
+    # Generic error for any failure (security best practice)
     if not user or not verify_password(data.password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        await record_login_attempt(email, ip, success=False)
+        await log_audit("login_failed", user={"email": email}, ip=ip, details="Credenciais inválidas")
+        raise HTTPException(status_code=401, detail=GENERIC_AUTH_ERROR)
+    
+    # is_active check
+    if user.get("is_active") is False:
+        await record_login_attempt(email, ip, success=False)
+        await log_audit("login_failed", user={"email": email}, ip=ip, details="Usuário inativo")
+        raise HTTPException(status_code=401, detail=GENERIC_AUTH_ERROR)
+    
+    # Success
+    await clear_login_attempts(email)
+    await record_login_attempt(email, ip, success=True)
     
     user_id = str(user["_id"])
     access_token = create_access_token(user_id, email)
@@ -258,45 +361,24 @@ async def login(data: UserLogin, response: Response):
     response.set_cookie(key="access_token", value=access_token, httponly=True, secure=False, samesite="lax", max_age=3600, path="/")
     response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=False, samesite="lax", max_age=604800, path="/")
     
-    return {
+    user_summary = {
         "id": user_id,
         "email": user["email"],
         "name": user["name"],
-        "role": user.get("role", "user"),
-        "token": access_token
+        "role": user.get("role", "operator"),
+        "region": user.get("region"),
     }
+    await log_audit("login_success", user=user_summary, ip=ip)
+    
+    return {**user_summary, "is_active": user.get("is_active", True), "token": access_token}
 
-@api_router.post("/auth/register")
-async def register(data: UserRegister, response: Response):
-    email = data.email.lower().strip()
-    existing = await db.users.find_one({"email": email})
-    if existing:
-        raise HTTPException(status_code=400, detail="Email already registered")
-    
-    hashed = hash_password(data.password)
-    user_doc = {
-        "email": email,
-        "password_hash": hashed,
-        "name": data.name,
-        "role": "user",
-        "created_at": datetime.now(timezone.utc).isoformat()
-    }
-    result = await db.users.insert_one(user_doc)
-    user_id = str(result.inserted_id)
-    
-    access_token = create_access_token(user_id, email)
-    refresh_token = create_refresh_token(user_id)
-    
-    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=False, samesite="lax", max_age=3600, path="/")
-    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=False, samesite="lax", max_age=604800, path="/")
-    
-    return {
-        "id": user_id,
-        "email": email,
-        "name": data.name,
-        "role": "user",
-        "token": access_token
-    }
+# Public registration is DISABLED — closed system. Use POST /api/users (admin) instead.
+@api_router.post("/auth/register", status_code=403)
+async def register_disabled():
+    raise HTTPException(
+        status_code=403,
+        detail="Cadastro público desabilitado. Solicite acesso ao administrador."
+    )
 
 @api_router.get("/auth/me")
 async def get_me(request: Request):
@@ -342,6 +424,10 @@ async def create_custody(data: CustodyCreate, request: Request):
     # Validate region
     if data.region not in ("São Paulo", "Guarulhos"):
         raise HTTPException(status_code=400, detail="Região inválida. Selecione 'São Paulo' ou 'Guarulhos'.")
+    
+    # RBAC: operators can only create in their own region
+    if not can_modify_region(user, data.region):
+        raise HTTPException(status_code=403, detail=f"Operadores só podem criar custódias em sua região ({user.get('region')}).")
     
     # Generate unique box number
     box_number = await generate_box_number()
@@ -590,10 +676,16 @@ async def bulk_update_custodies(data: BulkUpdateRequest, request: Request):
     
     now = datetime.now(timezone.utc).isoformat()
     updated_count = 0
+    blocked_count = 0
     
     for custody_id in data.custody_ids:
         custody = await db.custodies.find_one({"id": custody_id})
         if not custody:
+            continue
+        
+        # RBAC: operators only their region
+        if not can_modify_region(user, custody.get("region")):
+            blocked_count += 1
             continue
         
         update_data = {"updated_at": now}
@@ -628,7 +720,9 @@ async def bulk_update_custodies(data: BulkUpdateRequest, request: Request):
         )
         updated_count += 1
     
-    return {"updated_count": updated_count}
+    await log_audit("bulk_update", user=user, ip=get_client_ip(request),
+                    details=f"action={data.action}, atualizados={updated_count}, bloqueados_rbac={blocked_count}")
+    return {"updated_count": updated_count, "blocked_count": blocked_count}
 
 @api_router.get("/custodies/stats")
 async def get_custody_stats(request: Request, region: Optional[str] = None):
@@ -779,6 +873,10 @@ async def update_custody(custody_id: str, data: CustodyUpdate, request: Request)
     custody = await db.custodies.find_one({"id": custody_id})
     if not custody:
         raise HTTPException(status_code=404, detail="Custody not found")
+    
+    # RBAC: operators can only modify their own region
+    if not can_modify_region(user, custody.get("region")):
+        raise HTTPException(status_code=403, detail=f"Operadores só podem editar custódias da própria região ({user.get('region')}).")
     
     now = datetime.now(timezone.utc).isoformat()
     update_data = {"updated_at": now, "last_treatment_at": now}
@@ -992,16 +1090,177 @@ async def get_custody_label(custody_id: str, request: Request):
         "qr_data": custody.get("box_number", custody_id)
     }
 
-# Users list for filters
+# ============================================================================
+# User Management (Admin only)
+# ============================================================================
+
 @api_router.get("/users")
 async def list_users(request: Request):
+    """Any authenticated user may list users (used in filters). Returns sanitized data."""
     await get_current_user(request)
-    users = await db.users.find({}, {"_id": 0, "password_hash": 0}).to_list(1000)
+    users = await db.users.find({}, {"password_hash": 0}).to_list(1000)
+    out = []
     for u in users:
-        if "_id" in u:
-            u["id"] = str(u["_id"])
-            del u["_id"]
-    return users
+        u["id"] = str(u.pop("_id"))
+        u.setdefault("role", "operator")
+        u.setdefault("region", None)
+        u.setdefault("is_active", True)
+        out.append(u)
+    return out
+
+@api_router.post("/users", status_code=201)
+async def create_user(data: UserCreate, request: Request):
+    admin = await require_admin(request)
+    
+    email = data.email.lower().strip()
+    if not email or not data.password or not data.name:
+        raise HTTPException(status_code=400, detail="Nome, e-mail e senha são obrigatórios.")
+    
+    if data.role not in VALID_ROLES:
+        raise HTTPException(status_code=400, detail="Tipo de acesso inválido. Use 'admin' ou 'operator'.")
+    
+    if data.role == "operator" and data.region not in VALID_REGIONS:
+        raise HTTPException(status_code=400, detail="Operadores devem ser vinculados a uma região (Guarulhos ou São Paulo).")
+    
+    if len(data.password) < 6:
+        raise HTTPException(status_code=400, detail="A senha deve ter no mínimo 6 caracteres.")
+    
+    existing = await db.users.find_one({"email": email})
+    if existing:
+        raise HTTPException(status_code=400, detail="Já existe um usuário com este e-mail.")
+    
+    user_doc = {
+        "email": email,
+        "password_hash": hash_password(data.password),
+        "name": data.name.strip(),
+        "role": data.role,
+        "region": data.region if data.role == "operator" else None,
+        "is_active": True,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by": admin["id"],
+    }
+    result = await db.users.insert_one(user_doc)
+    user_doc["id"] = str(result.inserted_id)
+    user_doc.pop("_id", None)
+    user_doc.pop("password_hash", None)
+    
+    await log_audit("user_created", user=admin, ip=get_client_ip(request),
+                    target_id=user_doc["id"],
+                    details=f"Usuário criado: {email} ({data.role}{', ' + data.region if data.region else ''})")
+    return user_doc
+
+@api_router.patch("/users/{user_id}")
+async def update_user(user_id: str, data: UserUpdate, request: Request):
+    admin = await require_admin(request)
+    
+    try:
+        oid = ObjectId(user_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="ID de usuário inválido.")
+    
+    user = await db.users.find_one({"_id": oid})
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+    
+    update_fields = {}
+    changes = []
+    
+    if data.name is not None:
+        update_fields["name"] = data.name.strip()
+        changes.append(f"nome→{data.name.strip()}")
+    if data.role is not None:
+        if data.role not in VALID_ROLES:
+            raise HTTPException(status_code=400, detail="Tipo de acesso inválido.")
+        update_fields["role"] = data.role
+        changes.append(f"role→{data.role}")
+        # If becoming admin, clear region; operator must have region
+        if data.role == "admin":
+            update_fields["region"] = None
+    if data.region is not None:
+        new_role = update_fields.get("role", user.get("role"))
+        if new_role == "operator" and data.region not in VALID_REGIONS:
+            raise HTTPException(status_code=400, detail="Região inválida para operador.")
+        update_fields["region"] = data.region if new_role == "operator" else None
+        changes.append(f"região→{data.region}")
+    if data.is_active is not None:
+        update_fields["is_active"] = data.is_active
+        changes.append(f"ativo→{data.is_active}")
+    if data.password:
+        if len(data.password) < 6:
+            raise HTTPException(status_code=400, detail="A senha deve ter no mínimo 6 caracteres.")
+        update_fields["password_hash"] = hash_password(data.password)
+        changes.append("senha redefinida")
+    
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="Nenhuma alteração informada.")
+    
+    update_fields["updated_at"] = datetime.now(timezone.utc).isoformat()
+    update_fields["updated_by"] = admin["id"]
+    await db.users.update_one({"_id": oid}, {"$set": update_fields})
+    
+    await log_audit("user_updated", user=admin, ip=get_client_ip(request),
+                    target_id=user_id, details="; ".join(changes) or "atualização")
+    
+    updated = await db.users.find_one({"_id": oid}, {"password_hash": 0})
+    updated["id"] = str(updated.pop("_id"))
+    return updated
+
+@api_router.delete("/users/{user_id}")
+async def deactivate_user(user_id: str, request: Request):
+    """Soft delete: marca is_active=False (preserva histórico)."""
+    admin = await require_admin(request)
+    
+    if user_id == admin["id"]:
+        raise HTTPException(status_code=400, detail="Você não pode desativar a si mesmo.")
+    
+    try:
+        oid = ObjectId(user_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="ID de usuário inválido.")
+    
+    user = await db.users.find_one({"_id": oid})
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+    
+    await db.users.update_one({"_id": oid}, {"$set": {
+        "is_active": False,
+        "deactivated_at": datetime.now(timezone.utc).isoformat(),
+        "deactivated_by": admin["id"]
+    }})
+    await log_audit("user_deleted", user=admin, ip=get_client_ip(request),
+                    target_id=user_id, details=f"Usuário desativado: {user.get('email')}")
+    return {"message": "Usuário desativado com sucesso."}
+
+# ============================================================================
+# Audit Logs (Admin only)
+# ============================================================================
+
+@api_router.get("/audit-logs")
+async def list_audit_logs(
+    request: Request,
+    action: Optional[str] = None,
+    user_email: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    limit: int = 200,
+    skip: int = 0
+):
+    await require_admin(request)
+    query = {}
+    if action:
+        query["action"] = action
+    if user_email:
+        query["user_email"] = {"$regex": user_email, "$options": "i"}
+    if date_from:
+        query["created_at"] = {"$gte": date_from}
+    if date_to:
+        if "created_at" in query:
+            query["created_at"]["$lte"] = date_to
+        else:
+            query["created_at"] = {"$lte": date_to}
+    
+    logs = await db.audit_logs.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    return logs
 
 # Health check
 @api_router.get("/")
@@ -1036,6 +1295,14 @@ async def startup():
     await db.custodies.create_index("status")
     await db.custodies.create_index("created_at")
     await db.custodies.create_index("responsible_id")
+    await db.custodies.create_index("region")
+    await db.custodies.create_index([("region", 1), ("created_at", -1)])
+    await db.custodies.create_index([("region", 1), ("status", 1)])
+    await db.login_attempts.create_index("email")
+    await db.login_attempts.create_index("created_at")
+    await db.audit_logs.create_index("created_at")
+    await db.audit_logs.create_index("action")
+    await db.audit_logs.create_index("user_email")
     
     # Seed admin user
     admin_email = os.environ.get("ADMIN_EMAIL", "admin")
@@ -1049,15 +1316,35 @@ async def startup():
             "password_hash": hashed,
             "name": "Administrador",
             "role": "admin",
+            "region": None,
+            "is_active": True,
             "created_at": datetime.now(timezone.utc).isoformat()
         })
         logger.info(f"Admin user created: {admin_email}")
-    elif not verify_password(admin_password, existing["password_hash"]):
-        await db.users.update_one(
-            {"email": admin_email},
-            {"$set": {"password_hash": hash_password(admin_password)}}
-        )
-        logger.info(f"Admin password updated: {admin_email}")
+    else:
+        # Migration: ensure admin always has correct role/active
+        updates = {}
+        if existing.get("role") != "admin":
+            updates["role"] = "admin"
+        if existing.get("is_active") is False:
+            updates["is_active"] = True
+        if "region" not in existing:
+            updates["region"] = None
+        if not verify_password(admin_password, existing["password_hash"]):
+            updates["password_hash"] = hash_password(admin_password)
+        if updates:
+            await db.users.update_one({"email": admin_email}, {"$set": updates})
+            logger.info(f"Admin user migrated: {list(updates.keys())}")
+    
+    # Migration: legacy users without role default to operator/active
+    await db.users.update_many(
+        {"role": {"$exists": False}},
+        {"$set": {"role": "operator", "is_active": True}}
+    )
+    await db.users.update_many(
+        {"is_active": {"$exists": False}},
+        {"$set": {"is_active": True}}
+    )
     
     # Write test credentials
     Path("/app/memory").mkdir(exist_ok=True)
@@ -1067,12 +1354,18 @@ async def startup():
         f.write(f"- Email: {admin_email}\n")
         f.write(f"- Password: {admin_password}\n")
         f.write(f"- Role: admin\n\n")
-        f.write(f"## Auth Endpoints\n")
+        f.write(f"## Auth Endpoints (login only — registration is closed)\n")
         f.write(f"- POST /api/auth/login\n")
-        f.write(f"- POST /api/auth/register\n")
         f.write(f"- GET /api/auth/me\n")
         f.write(f"- POST /api/auth/logout\n")
-        f.write(f"- POST /api/auth/refresh\n")
+        f.write(f"- POST /api/auth/refresh\n\n")
+        f.write(f"## User Management (admin only)\n")
+        f.write(f"- GET /api/users\n")
+        f.write(f"- POST /api/users (create)\n")
+        f.write(f"- PATCH /api/users/{{id}} (update)\n")
+        f.write(f"- DELETE /api/users/{{id}} (deactivate)\n\n")
+        f.write(f"## Audit\n")
+        f.write(f"- GET /api/audit-logs (admin only)\n")
     
     logger.info("D1 Custódia API started successfully")
 

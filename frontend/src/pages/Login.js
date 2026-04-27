@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { Package, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Package, Eye, EyeOff, Loader2, ShieldAlert } from 'lucide-react';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [isLocked, setIsLocked] = useState(false);
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -25,7 +26,9 @@ export default function Login() {
     if (result.success) {
       navigate('/dashboard');
     } else {
+      // Lockout 423 → mais explícito; demais → mensagem genérica do backend
       setError(result.error);
+      setIsLocked(result.status === 423);
     }
     setLoading(false);
   };
@@ -110,8 +113,16 @@ export default function Login() {
               </div>
 
               {error && (
-                <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 text-red-400 text-sm" data-testid="login-error">
-                  {error}
+                <div 
+                  className={`rounded-lg p-3 text-sm flex items-start gap-2 ${
+                    isLocked
+                      ? 'bg-amber-500/10 border border-amber-500/30 text-amber-300'
+                      : 'bg-red-500/10 border border-red-500/20 text-red-400'
+                  }`}
+                  data-testid="login-error"
+                >
+                  <ShieldAlert className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <span>{error}</span>
                 </div>
               )}
 
@@ -133,11 +144,8 @@ export default function Login() {
             </form>
 
             <div className="mt-6 text-center">
-              <p className="text-slate-500 text-sm">
-                Não tem uma conta?{' '}
-                <Link to="/register" className="text-blue-400 hover:text-blue-300 font-medium" data-testid="register-link">
-                  Cadastre-se
-                </Link>
+              <p className="text-slate-500 text-xs">
+                Sistema fechado · Solicite acesso ao administrador.
               </p>
             </div>
           </div>

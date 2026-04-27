@@ -260,14 +260,14 @@ export default function History() {
               <div className="space-y-2">
                 <Label className="text-xs text-slate-400">Status</Label>
                 <Select 
-                  value={filters.status} 
-                  onValueChange={(value) => setFilters(prev => ({ ...prev, status: value }))}
+                  value={filters.status || 'all'} 
+                  onValueChange={(value) => setFilters(prev => ({ ...prev, status: value === 'all' ? '' : value }))}
                 >
                   <SelectTrigger className="bg-slate-950 border-slate-700 text-slate-100" data-testid="filter-status">
                     <SelectValue placeholder="Todos" />
                   </SelectTrigger>
                   <SelectContent className="bg-slate-900 border-slate-700">
-                    <SelectItem value="" className="text-slate-200">Todos</SelectItem>
+                    <SelectItem value="all" className="text-slate-200">Todos</SelectItem>
                     <SelectItem value="pending" className="text-slate-200">Pendente</SelectItem>
                     <SelectItem value="resolved" className="text-slate-200">Resolvido</SelectItem>
                   </SelectContent>
@@ -277,14 +277,14 @@ export default function History() {
               <div className="space-y-2">
                 <Label className="text-xs text-slate-400">Ocorrência</Label>
                 <Select 
-                  value={filters.occurrence_type} 
-                  onValueChange={(value) => setFilters(prev => ({ ...prev, occurrence_type: value }))}
+                  value={filters.occurrence_type || 'all'} 
+                  onValueChange={(value) => setFilters(prev => ({ ...prev, occurrence_type: value === 'all' ? '' : value }))}
                 >
                   <SelectTrigger className="bg-slate-950 border-slate-700 text-slate-100" data-testid="filter-occurrence">
                     <SelectValue placeholder="Todos" />
                   </SelectTrigger>
                   <SelectContent className="bg-slate-900 border-slate-700">
-                    <SelectItem value="" className="text-slate-200">Todos</SelectItem>
+                    <SelectItem value="all" className="text-slate-200">Todos</SelectItem>
                     {Object.entries(occurrenceTypes).map(([value, label]) => (
                       <SelectItem key={value} value={value} className="text-slate-200">
                         {label}
@@ -297,14 +297,14 @@ export default function History() {
               <div className="space-y-2">
                 <Label className="text-xs text-slate-400">Responsável</Label>
                 <Select 
-                  value={filters.responsible_id} 
-                  onValueChange={(value) => setFilters(prev => ({ ...prev, responsible_id: value }))}
+                  value={filters.responsible_id || 'all'} 
+                  onValueChange={(value) => setFilters(prev => ({ ...prev, responsible_id: value === 'all' ? '' : value }))}
                 >
                   <SelectTrigger className="bg-slate-950 border-slate-700 text-slate-100" data-testid="filter-responsible">
                     <SelectValue placeholder="Todos" />
                   </SelectTrigger>
                   <SelectContent className="bg-slate-900 border-slate-700">
-                    <SelectItem value="" className="text-slate-200">Todos</SelectItem>
+                    <SelectItem value="all" className="text-slate-200">Todos</SelectItem>
                     {users.map((user) => (
                       <SelectItem key={user.id} value={user.id} className="text-slate-200">
                         {user.name}

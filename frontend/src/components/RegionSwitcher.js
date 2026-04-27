@@ -1,21 +1,42 @@
 import React from 'react';
 import { useRegion } from '../context/RegionContext';
-import { MapPin, Building2 } from 'lucide-react';
+import { MapPin, Building2, Lock } from 'lucide-react';
 
 /**
  * Top-level Region Switcher tabs.
- * Affects ALL data shown in the app (dashboard, central, history, alerts).
- * variant="full"   -> wide horizontal bar (desktop)
- * variant="compact"-> stacked pill buttons (mobile/sidebar)
+ * - Admin sees both regions and can switch
+ * - Operator sees only their own region (locked, read-only badge)
+ * variant="full" -> wide horizontal bar (desktop)
+ * variant="compact" -> stacked pill buttons (mobile/sidebar)
  */
 export default function RegionSwitcher({ variant = 'full' }) {
-  const { activeRegion, setActiveRegion, regions } = useRegion();
+  const { activeRegion, setActiveRegion, regions, isLocked } = useRegion();
 
   const iconFor = (r) => (r === 'Guarulhos' ? Building2 : MapPin);
 
+  // Locked operator → render single locked badge
+  if (isLocked && regions.length === 1) {
+    const r = regions[0];
+    const Icon = iconFor(r);
+    return (
+      <div
+        className="flex items-center gap-2 px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg"
+        data-testid="region-locked"
+        title="Sua operação está vinculada a esta região"
+      >
+        <Icon className="w-4 h-4 text-blue-400" />
+        <span className="text-sm font-bold text-slate-200">{r}</span>
+        <Lock className="w-3.5 h-3.5 text-slate-500 ml-auto" />
+      </div>
+    );
+  }
+
   if (variant === 'compact') {
     return (
-      <div className="flex gap-1 p-1 bg-slate-950 border border-slate-800 rounded-lg" data-testid="region-switcher-compact">
+      <div
+        className="flex gap-1 p-1 bg-slate-950 border border-slate-800 rounded-lg"
+        data-testid="region-switcher-compact"
+      >
         {regions.map((r) => {
           const Icon = iconFor(r);
           const active = r === activeRegion;
