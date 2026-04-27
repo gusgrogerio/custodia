@@ -339,6 +339,10 @@ async def refresh_token(request: Request, response: Response):
 async def create_custody(data: CustodyCreate, request: Request):
     user = await get_current_user(request)
     
+    # Validate region
+    if data.region not in ("São Paulo", "Guarulhos"):
+        raise HTTPException(status_code=400, detail="Região inválida. Selecione 'São Paulo' ou 'Guarulhos'.")
+    
     # Generate unique box number
     box_number = await generate_box_number()
     now = datetime.now(timezone.utc).isoformat()

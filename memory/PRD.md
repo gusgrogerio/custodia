@@ -7,6 +7,7 @@ Criar uma aplicação web responsiva chamada "D1 Custódia" para operação log�
 - MVP: 31/03/2026
 - Funcionalidades de Caixa e Alertas: 27/04/2026
 - Central de Custódias: 27/04/2026
+- Tabs por Região + Busca em Tempo Real + Validação Região: 27/04/2026
 
 ## Arquitetura
 
@@ -85,6 +86,14 @@ Criar uma aplicação web responsiva chamada "D1 Custódia" para operação log�
 - [x] **Exportar para CSV/Excel**
 - [x] **Versão Mobile com Cards Expansíveis**
 
+### Fase 4 - Tabs Regionais e Busca Avançada (27/04/2026)
+- [x] **Tabs de Região na Central** (Todos / São Paulo / Guarulhos) com contadores em tempo real
+- [x] **Indicadores visuais por região** (pontos amarelo 8d / vermelho 10d)
+- [x] **Barra de busca em tempo real** (código, cliente, telefone, nº caixa)
+- [x] **Endpoint GET /api/custodies/region-stats** (totais e atrasos por região)
+- [x] **Campo Região OBRIGATÓRIO no cadastro** (validação client-side + server-side 400)
+- [x] **Testes automatizados**: `/app/backend/tests/test_region_features.py` (14/14 ✅)
+
 ## Status Disponíveis
 - `pending` - Em andamento
 - `resolved` - Finalizada
@@ -112,13 +121,16 @@ Criar uma aplicação web responsiva chamada "D1 Custódia" para operação log�
 - GET /api/custodies/{id}/label - Dados para etiqueta
 - GET /api/custodies/export/csv - Exporta CSV
 - POST /api/custodies/bulk-update - Ações em massa
+- GET /api/custodies/region-stats - Métricas por região (SP / Guarulhos)
 
 ## Test Credentials
 - Admin: admin / 123456789
 
 ## Próximas Melhorias (Backlog)
+- [ ] **P1**: Ações em massa adicionais na Central ("Atualizar responsável", "Enviar para planilha" — Msg 171)
+- [ ] **P2**: Notificações push (Firebase Cloud Messaging) para 8/10 dias sem tratativa (Msg 79)
 - [ ] Integração real com Google Sheets
-- [ ] Notificações push (Firebase)
 - [ ] Relatórios em PDF
 - [ ] Multi-tenant
 - [ ] Gestão de usuários
+- [ ] Refatorar `/app/backend/server.py` (>1000 linhas) em routers (auth/custodies/storage)

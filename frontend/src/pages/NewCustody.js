@@ -125,7 +125,7 @@ export default function NewCustody() {
     address: '',
     city: '',
     state: '',
-    region: 'São Paulo',
+    region: '',
     occurrence_type: '',
     observation: '',
     volume_current: 1,
@@ -165,6 +165,11 @@ export default function NewCustody() {
     
     if (!formData.shipment_code || !formData.client_name || !formData.occurrence_type) {
       toast.error('Preencha todos os campos obrigatórios');
+      return;
+    }
+
+    if (!formData.region) {
+      toast.error('Selecione a Região (São Paulo ou Guarulhos)');
       return;
     }
 
