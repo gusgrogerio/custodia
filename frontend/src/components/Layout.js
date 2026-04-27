@@ -1,6 +1,8 @@
 import React from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useRegion } from '../context/RegionContext';
+import RegionSwitcher from './RegionSwitcher';
 import { 
   LayoutDashboard, 
   PlusCircle, 
@@ -25,6 +27,7 @@ const navItems = [
 
 export default function Layout({ children }) {
   const { logout, user } = useAuth();
+  const { activeRegion } = useRegion();
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -49,6 +52,14 @@ export default function Layout({ children }) {
               <p className="text-xs text-slate-500">Sistema Logístico</p>
             </div>
           </div>
+        </div>
+
+        {/* Region Switcher (desktop) */}
+        <div className="px-4 pt-4">
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 mb-2 px-1">
+            Operação Ativa
+          </p>
+          <RegionSwitcher variant="compact" />
         </div>
 
         {/* Navigation */}
@@ -98,21 +109,30 @@ export default function Layout({ children }) {
       </aside>
 
       {/* Mobile Header */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-slate-900/90 backdrop-blur-lg border-b border-slate-800 flex items-center justify-between px-4 z-50">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-            <Package className="w-4 h-4 text-white" />
+      <header className="lg:hidden fixed top-0 left-0 right-0 bg-slate-900/90 backdrop-blur-lg border-b border-slate-800 z-50">
+        <div className="h-14 flex items-center justify-between px-4">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+              <Package className="w-4 h-4 text-white" />
+            </div>
+            <div className="flex flex-col leading-tight">
+              <span className="font-bold text-slate-50 font-['Chivo'] text-sm">D1 Custódia</span>
+              <span className="text-[10px] text-blue-400 font-semibold">{activeRegion}</span>
+            </div>
           </div>
-          <span className="font-bold text-slate-50 font-['Chivo']">D1 Custódia</span>
+          <Button 
+            variant="ghost" 
+            size="sm"
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="text-slate-400"
+          >
+            {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </Button>
         </div>
-        <Button 
-          variant="ghost" 
-          size="sm"
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="text-slate-400"
-        >
-          {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-        </Button>
+        {/* Region tabs strip on mobile */}
+        <div className="px-3 pb-2">
+          <RegionSwitcher variant="compact" />
+        </div>
       </header>
 
       {/* Mobile Sidebar Overlay */}
@@ -124,7 +144,7 @@ export default function Layout({ children }) {
       )}
 
       {/* Mobile Sidebar */}
-      <aside className={`lg:hidden fixed top-14 right-0 w-64 h-[calc(100vh-3.5rem)] bg-slate-900 border-l border-slate-800 z-50 transform transition-transform duration-200 ${sidebarOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+      <aside className={`lg:hidden fixed top-[6.25rem] right-0 w-64 h-[calc(100vh-6.25rem)] bg-slate-900 border-l border-slate-800 z-50 transform transition-transform duration-200 ${sidebarOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         <nav className="p-4 space-y-1">
           {navItems.map((item) => {
             const Icon = item.icon;
@@ -182,7 +202,7 @@ export default function Layout({ children }) {
       </nav>
 
       {/* Main Content */}
-      <main className="pt-14 pb-20 lg:pt-0 lg:pb-0 lg:pl-64 min-h-screen">
+      <main className="pt-[6.25rem] pb-20 lg:pt-0 lg:pb-0 lg:pl-64 min-h-screen">
         <div className="p-4 sm:p-6 lg:p-8">
           {children}
         </div>

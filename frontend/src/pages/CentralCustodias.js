@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import { useRegion } from '../context/RegionContext';
 import Layout from '../components/Layout';
 import { 
   Package, 
@@ -79,8 +80,6 @@ const occurrenceTypes = {
   'outro': 'Outro',
 };
 
-const REGIONS = ['São Paulo', 'Guarulhos'];
-
 function MetricCard({ title, value, icon: Icon, color, onClick, active }) {
   return (
     <div 
@@ -102,38 +101,9 @@ function MetricCard({ title, value, icon: Icon, color, onClick, active }) {
   );
 }
 
-// Region Tab component
-function RegionTab({ region, count, isActive, alertType, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`relative px-6 py-3 font-semibold text-sm transition-all duration-200 rounded-t-xl ${
-        isActive 
-          ? 'bg-slate-900 text-blue-400 border-t border-l border-r border-slate-700' 
-          : 'bg-slate-800/50 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-      }`}
-      data-testid={`region-tab-${region.toLowerCase().replace(' ', '-')}`}
-    >
-      <div className="flex items-center gap-2">
-        <MapPin className="w-4 h-4" />
-        <span>{region}</span>
-        <Badge className="bg-slate-700 text-slate-300 text-xs">{count}</Badge>
-        
-        {/* Alert indicator */}
-        {alertType && (
-          <span className={`w-2.5 h-2.5 rounded-full ${
-            alertType === 'red' ? 'bg-red-500 animate-pulse' : 'bg-amber-500 animate-pulse'
-          }`} />
-        )}
-      </div>
-      
-      {/* Active indicator */}
-      {isActive && (
-        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500" />
-      )}
-    </button>
-  );
-}
+// Region Tab component - DEPRECATED: replaced by global RegionSwitcher in Layout
+// Kept temporarily; safe to remove in future cleanup.
+function _RegionTab_unused() { return null; }
 
 // Mobile card component
 function CustodyCard({ custody, isSelected, onSelect, onView, searchQuery }) {
@@ -242,18 +212,13 @@ function CustodyCard({ custody, isSelected, onSelect, onView, searchQuery }) {
 
 export default function CentralCustodias() {
   const { getAuthHeaders } = useAuth();
+  const { activeRegion } = useRegion();
   const [custodies, setCustodies] = useState([]);
   const [stats, setStats] = useState({ total: 0, awaiting_return: 0, near_return: 0, ready_for_return: 0, finalized: 0, no_photos: 0 });
-  const [regionStats, setRegionStats] = useState({});
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
-  
-  // Active region tab - load from localStorage
-  const [activeRegion, setActiveRegion] = useState(() => {
-    return localStorage.getItem('central_region') || 'São Paulo';
-  });
   
   // Search query for real-time search
   const [searchQuery, setSearchQuery] = useState('');
@@ -280,17 +245,12 @@ export default function CentralCustodias() {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Save active region to localStorage
-  useEffect(() => {
-    localStorage.setItem('central_region', activeRegion);
-  }, [activeRegion]);
-
   const fetchData = useCallback(async () => {
     try {
       const headers = getAuthHeaders();
       const params = new URLSearchParams();
       
-      // Always filter by active region
+      // Always filter by active region (from global RegionContext)
       params.append('region', activeRegion);
       
       // Apply search query
@@ -310,16 +270,14 @@ export default function CentralCustodias() {
       if (filters.sort_by) params.append('sort_by', filters.sort_by);
       params.append('limit', '500');
       
-      const [custodiesRes, statsRes, regionStatsRes, usersRes] = await Promise.all([
+      const [custodiesRes, statsRes, usersRes] = await Promise.all([
         axios.get(`${API}/custodies?${params.toString()}`, { withCredentials: true, headers }),
-        axios.get(`${API}/custodies/central-stats`, { withCredentials: true, headers }),
-        axios.get(`${API}/custodies/region-stats`, { withCredentials: true, headers }),
+        axios.get(`${API}/custodies/central-stats?region=${encodeURIComponent(activeRegion)}`, { withCredentials: true, headers }),
         axios.get(`${API}/users`, { withCredentials: true, headers })
       ]);
       
       setCustodies(custodiesRes.data);
       setStats(statsRes.data);
-      setRegionStats(regionStatsRes.data);
       setUsers(usersRes.data);
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -500,8 +458,10 @@ export default function CentralCustodias() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-50 font-['Chivo']">Central de Custódias</h1>
-            <p className="text-slate-400 text-sm mt-1">{activeRegion} • {custodies.length} registros</p>
+            <h1 className="text-2xl sm:text-3xl font-black text-slate-50 font-['Chivo']">
+              Central de Custódias <span className="text-blue-400">· {activeRegion}</span>
+            </h1>
+            <p className="text-slate-400 text-sm mt-1">Operação isolada • {custodies.length} registros em {activeRegion}</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <Button 
@@ -552,19 +512,7 @@ export default function CentralCustodias() {
           )}
         </div>
 
-        {/* Region Tabs */}
-        <div className="flex gap-1 border-b border-slate-800">
-          {REGIONS.map((region) => (
-            <RegionTab
-              key={region}
-              region={region}
-              count={regionStats[region]?.total || 0}
-              isActive={activeRegion === region}
-              alertType={regionStats[region]?.alert_type}
-              onClick={() => setActiveRegion(region)}
-            />
-          ))}
-        </div>
+        {/* Region Tabs - removed: now controlled globally via Layout RegionSwitcher */}
 
         {/* Metrics Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3" data-testid="central-metrics">

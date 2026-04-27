@@ -2,6 +2,7 @@ import React from "react";
 import "@/App.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { RegionProvider } from "./context/RegionContext";
 import { Toaster } from "./components/ui/sonner";
 
 // Pages
@@ -137,19 +138,21 @@ function AppRoutes() {
 function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <AppRoutes />
-        <Toaster 
-          position="top-right"
-          toastOptions={{
-            style: {
-              background: '#1e293b',
-              border: '1px solid #334155',
-              color: '#f8fafc',
-            },
-          }}
-        />
-      </BrowserRouter>
+      <RegionProvider>
+        <BrowserRouter>
+          <AppRoutes />
+          <Toaster 
+            position="top-right"
+            toastOptions={{
+              style: {
+                background: '#1e293b',
+                border: '1px solid #334155',
+                color: '#f8fafc',
+              },
+            }}
+          />
+        </BrowserRouter>
+      </RegionProvider>
     </AuthProvider>
   );
 }

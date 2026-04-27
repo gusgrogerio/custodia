@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import { useRegion } from '../context/RegionContext';
 import Layout from '../components/Layout';
 import { 
   Package, 
@@ -67,6 +68,7 @@ const occurrenceTypes = {
 
 export default function History() {
   const { getAuthHeaders } = useAuth();
+  const { activeRegion } = useRegion();
   const [custodies, setCustodies] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -84,6 +86,7 @@ export default function History() {
     try {
       const headers = getAuthHeaders();
       const params = new URLSearchParams();
+      params.append('region', activeRegion);
       
       if (filters.status) params.append('status', filters.status);
       if (filters.occurrence_type) params.append('occurrence_type', filters.occurrence_type);
@@ -123,12 +126,13 @@ export default function History() {
 
   useEffect(() => {
     fetchCustodies();
-  }, [filters]);
+  }, [filters, activeRegion]);
 
   const handleExport = async () => {
     try {
       const headers = getAuthHeaders();
       const params = new URLSearchParams();
+      params.append('region', activeRegion);
       
       if (filters.status) params.append('status', filters.status);
       if (filters.date_from) params.append('date_from', filters.date_from.toISOString());
@@ -200,9 +204,11 @@ export default function History() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-50 font-['Chivo']">Histórico</h1>
+            <h1 className="text-2xl sm:text-3xl font-black text-slate-50 font-['Chivo']">
+              Histórico <span className="text-blue-400">· {activeRegion}</span>
+            </h1>
             <p className="text-slate-400 text-sm mt-1">
-              {custodies.length} registros encontrados
+              {custodies.length} registros encontrados em {activeRegion}
             </p>
           </div>
           <div className="flex items-center gap-2">

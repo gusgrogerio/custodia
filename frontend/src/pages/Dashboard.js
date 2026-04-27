@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import { useRegion } from '../context/RegionContext';
 import Layout from '../components/Layout';
 import { 
   Package, 
@@ -133,6 +134,7 @@ function AlertBanner({ alerts, onDismiss }) {
 
 export default function Dashboard() {
   const { getAuthHeaders } = useAuth();
+  const { activeRegion } = useRegion();
   const [stats, setStats] = useState({ total_today: 0, pending: 0, resolved: 0, expired: 0, near_return: 0, ready_for_return: 0 });
   const [custodies, setCustodies] = useState([]);
   const [alerts, setAlerts] = useState([]);
@@ -144,10 +146,11 @@ export default function Dashboard() {
   const fetchData = async () => {
     try {
       const headers = getAuthHeaders();
+      const regionParam = `region=${encodeURIComponent(activeRegion)}`;
       const [statsRes, custodiesRes, alertsRes] = await Promise.all([
-        axios.get(`${API}/custodies/stats`, { withCredentials: true, headers }),
-        axios.get(`${API}/custodies?limit=10`, { withCredentials: true, headers }),
-        axios.get(`${API}/custodies/alerts`, { withCredentials: true, headers })
+        axios.get(`${API}/custodies/stats?${regionParam}`, { withCredentials: true, headers }),
+        axios.get(`${API}/custodies?limit=10&${regionParam}`, { withCredentials: true, headers }),
+        axios.get(`${API}/custodies/alerts?${regionParam}`, { withCredentials: true, headers })
       ]);
       setStats(statsRes.data);
       setCustodies(custodiesRes.data);
@@ -163,7 +166,7 @@ export default function Dashboard() {
   const fetchFilteredCustodies = async (filterType) => {
     try {
       const headers = getAuthHeaders();
-      let url = `${API}/custodies?limit=50`;
+      let url = `${API}/custodies?limit=50&region=${encodeURIComponent(activeRegion)}`;
       
       if (filterType === 'near_return') {
         url += '&near_return=true';
@@ -181,11 +184,14 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
+    setLoading(true);
+    setFilter(null);
     fetchData();
     // Auto refresh every 30 seconds
     const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRegion]);
 
   const handleFilterClick = (filterType) => {
     if (filter === filterType) {
@@ -262,8 +268,10 @@ export default function Dashboard() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-50 font-['Chivo']">Dashboard</h1>
-            <p className="text-slate-400 text-sm mt-1">Visão geral das custódias</p>
+            <h1 className="text-2xl sm:text-3xl font-black text-slate-50 font-['Chivo']">
+              Dashboard <span className="text-blue-400">· {activeRegion}</span>
+            </h1>
+            <p className="text-slate-400 text-sm mt-1">Operação isolada — apenas dados de {activeRegion}</p>
           </div>
           <div className="flex items-center gap-2">
             <Button 

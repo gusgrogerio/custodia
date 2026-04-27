@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 5 validates the global region switcher refactor (RegionContext) for D1 Custódia. Backend: 8/9 region-aware endpoint tests passed (CSV column-by-column test skipped because export has no 'Região' column, but isolation verified manually via curl: GRU=5, SP=4, Global=26 rows, no leakage). Frontend: switcher works on sidebar, switches data without reload, persists in localStorage, page subtitles display the region, /nova-custodia toast 'Selecione a Região' appears when empty. No JS errors during testing.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/custodies/export/csv", "issue": "Region filter works (verified via row counts), but the CSV header does not contain a 'Região' column — users exporting a region-filtered file cannot tell from the file alone which region the data belongs to."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Layout sidebar (desktop)", "issue": "Problem statement claims wrapper data-testid='region-switcher' on desktop, but actual rendered element exposes data-testid='region-switcher-compact' (count=2, both are compact). Tests work because the compact variant is also used for desktop, but the documentation/data-testid plan diverges from implementation.", "selector": "[data-testid='region-switcher']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_region_iter5.py",
+    "/app/backend/tests/test_region_features.py",
+    "/app/test_reports/pytest/iteration5.xml"
+  ],
+  "action_items": [
+    "(Optional) Add a 'Região' column to /api/custodies/export/csv so exported files self-document the active region.",
+    "(Optional) Either add the data-testid='region-switcher' wrapper on the desktop sidebar variant or update the spec/playbook to reflect that 'region-switcher-compact' is used on both breakpoints."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now 1079 lines — long overdue for a router-based split (auth.py, custodies.py, storage.py, exports.py).",
+    "/api/custodies/stats builds two different query shapes for ready_for_return depending on whether region is set (lines 662–675). Refactor to always use the $and form to simplify and reduce branch divergence.",
+    "/api/custodies/alerts also forks the ready_query when region is set (lines 720–728); same simplification opportunity.",
+    "POST /custodies still defaults model field region='São Paulo' (line 168). Coupled with the 400 validation, the default is harmless because the request body must explicitly include a valid value, but it is misleading — set default to None or remove.",
+    "Mongo indexes on 'region' should be created on app startup (referenced at line 1003); confirm with db.custodies.index_information() on first boot of a fresh DB to ensure idempotency."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_region_iter5.py"
+  ],
+  "success_rate": {"backend": "100% (8 passed, 1 skipped due to missing CSV column — non-blocking)", "frontend": "100% on tested flows"},
+  "test_credentials": "admin / 123456789 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Created 2 TEST_ITER5_* custodies (SP + Guarulhos) via fixture; auto-resolved at end of run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Region isolation across all endpoints verified. If main agent decides to add a Região column to the CSV export, re-run /app/backend/tests/test_region_iter5.py::test_csv_export_by_region (currently skipped). All tests are non-destructive (TEST_ prefix).",
+  "rca of the issue": "N/A - no critical bugs."
+}

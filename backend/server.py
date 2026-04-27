@@ -489,43 +489,52 @@ async def list_custodies(
 
 # Central stats endpoint with more details
 @api_router.get("/custodies/central-stats")
-async def get_central_stats(request: Request):
+async def get_central_stats(request: Request, region: Optional[str] = None):
     await get_current_user(request)
     
     near_return_threshold = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat()
     return_threshold = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
     
-    total = await db.custodies.count_documents({})
+    region_filter = {"region": region} if region else {}
+    
+    total = await db.custodies.count_documents(region_filter)
     
     # Aguardando retorno (pending, not near return)
     awaiting_return = await db.custodies.count_documents({
+        **region_filter,
         "status": "pending",
         "last_treatment_at": {"$gte": near_return_threshold}
     })
     
     # Próximas da devolução (8-9 days)
     near_return = await db.custodies.count_documents({
+        **region_filter,
         "status": {"$nin": ["resolved", "ready_for_return", "returned"]},
         "last_treatment_at": {"$lt": near_return_threshold, "$gte": return_threshold}
     })
     
     # Aptas para devolução (10+ days)
-    ready_for_return = await db.custodies.count_documents({
+    ready_query = {
         "$or": [
             {"status": "ready_for_return"},
             {"status": {"$nin": ["resolved", "ready_for_return", "returned"]}, "last_treatment_at": {"$lt": return_threshold}}
         ]
-    })
+    }
+    if region:
+        ready_query = {"$and": [{"region": region}, ready_query]}
+    ready_for_return = await db.custodies.count_documents(ready_query)
     
     # Finalizadas
-    finalized = await db.custodies.count_documents({"status": {"$in": ["resolved", "returned"]}})
+    finalized = await db.custodies.count_documents({**region_filter, "status": {"$in": ["resolved", "returned"]}})
     
     # Sem foto
-    no_photos = await db.custodies.count_documents({
-        "$or": [{"photos": {"$exists": False}}, {"photos": {"$size": 0}}]
-    })
+    no_photos_query = {"$or": [{"photos": {"$exists": False}}, {"photos": {"$size": 0}}]}
+    if region:
+        no_photos_query = {"$and": [{"region": region}, no_photos_query]}
+    no_photos = await db.custodies.count_documents(no_photos_query)
     
     return {
+        "region": region,
         "total": total,
         "awaiting_return": awaiting_return,
         "near_return": near_return,
@@ -622,7 +631,7 @@ async def bulk_update_custodies(data: BulkUpdateRequest, request: Request):
     return {"updated_count": updated_count}
 
 @api_router.get("/custodies/stats")
-async def get_custody_stats(request: Request):
+async def get_custody_stats(request: Request, region: Optional[str] = None):
     await get_current_user(request)
     
     today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
@@ -630,22 +639,35 @@ async def get_custody_stats(request: Request):
     near_return_threshold = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat()
     return_threshold = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
     
-    total_today = await db.custodies.count_documents({"created_at": {"$gte": today_start}})
-    pending = await db.custodies.count_documents({"status": "pending"})
-    resolved = await db.custodies.count_documents({"status": "resolved"})
+    # Region filter mixin (applied to every counter)
+    region_filter = {"region": region} if region else {}
+    
+    total_today = await db.custodies.count_documents({**region_filter, "created_at": {"$gte": today_start}})
+    pending = await db.custodies.count_documents({**region_filter, "status": "pending"})
+    resolved = await db.custodies.count_documents({**region_filter, "status": "resolved"})
     expired = await db.custodies.count_documents({
+        **region_filter,
         "status": "pending",
         "created_at": {"$lt": expired_threshold}
     })
     
     # Near return (8-9 days without treatment)
     near_return = await db.custodies.count_documents({
+        **region_filter,
         "status": {"$nin": ["resolved", "ready_for_return"]},
         "last_treatment_at": {"$lt": near_return_threshold, "$gte": return_threshold}
     })
     
     # Ready for return (10+ days without treatment)
     ready_for_return = await db.custodies.count_documents({
+        "$and": [
+            region_filter if region_filter else {},
+            {"$or": [
+                {"status": "ready_for_return"},
+                {"status": {"$nin": ["resolved", "ready_for_return"]}, "last_treatment_at": {"$lt": return_threshold}}
+            ]}
+        ]
+    } if region_filter else {
         "$or": [
             {"status": "ready_for_return"},
             {"status": {"$nin": ["resolved", "ready_for_return"]}, "last_treatment_at": {"$lt": return_threshold}}
@@ -653,6 +675,7 @@ async def get_custody_stats(request: Request):
     })
     
     return {
+        "region": region,
         "total_today": total_today,
         "pending": pending,
         "resolved": resolved,
@@ -663,16 +686,19 @@ async def get_custody_stats(request: Request):
 
 # Get alerts for dashboard
 @api_router.get("/custodies/alerts")
-async def get_custody_alerts(request: Request):
+async def get_custody_alerts(request: Request, region: Optional[str] = None):
     await get_current_user(request)
     
     near_return_threshold = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat()
     return_threshold = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
     
+    region_filter = {"region": region} if region else {}
+    
     alerts = []
     
     # Get custodies near return (8-9 days)
     near_custodies = await db.custodies.find({
+        **region_filter,
         "status": {"$nin": ["resolved", "ready_for_return"]},
         "last_treatment_at": {"$lt": near_return_threshold, "$gte": return_threshold}
     }, {"_id": 0}).to_list(100)
@@ -691,12 +717,15 @@ async def get_custody_alerts(request: Request):
         })
     
     # Get custodies ready for return (10+ days)
-    return_custodies = await db.custodies.find({
+    ready_query = {
         "$or": [
             {"status": "ready_for_return"},
             {"status": {"$nin": ["resolved", "ready_for_return"]}, "last_treatment_at": {"$lt": return_threshold}}
         ]
-    }, {"_id": 0}).to_list(100)
+    }
+    if region:
+        ready_query = {"$and": [{"region": region}, ready_query]}
+    return_custodies = await db.custodies.find(ready_query, {"_id": 0}).to_list(100)
     
     for custody in return_custodies:
         treatment_info = calculate_days_without_treatment(custody)
@@ -884,13 +913,16 @@ async def export_custodies_csv(
     request: Request,
     status: Optional[str] = None,
     date_from: Optional[str] = None,
-    date_to: Optional[str] = None
+    date_to: Optional[str] = None,
+    region: Optional[str] = None
 ):
     await get_current_user(request)
     
     query = {}
     if status:
         query["status"] = status
+    if region:
+        query["region"] = region
     if date_from:
         query["created_at"] = {"$gte": date_from}
     if date_to:
