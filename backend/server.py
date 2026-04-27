@@ -1194,6 +1194,15 @@ async def update_user(user_id: str, data: UserUpdate, request: Request):
     if not update_fields:
         raise HTTPException(status_code=400, detail="Nenhuma alteração informada.")
     
+    # Final-state validation: if user ends up as operator, region must be valid
+    final_role = update_fields.get("role", user.get("role"))
+    final_region = update_fields.get("region", user.get("region"))
+    if final_role == "operator" and final_region not in VALID_REGIONS:
+        raise HTTPException(
+            status_code=400,
+            detail="Operadores devem estar vinculados a uma região (Guarulhos ou São Paulo)."
+        )
+    
     update_fields["updated_at"] = datetime.now(timezone.utc).isoformat()
     update_fields["updated_by"] = admin["id"]
     await db.users.update_one({"_id": oid}, {"$set": update_fields})
@@ -1246,6 +1255,9 @@ async def list_audit_logs(
     skip: int = 0
 ):
     await require_admin(request)
+    # Cap limit to prevent abuse
+    limit = max(1, min(limit, 500))
+    skip = max(0, skip)
     query = {}
     if action:
         query["action"] = action

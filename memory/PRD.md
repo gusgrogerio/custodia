@@ -9,6 +9,7 @@ Criar uma aplicação web responsiva chamada "D1 Custódia" para operação log�
 - Central de Custódias: 27/04/2026
 - Tabs por Região + Busca em Tempo Real + Validação Região: 27/04/2026
 - **Operação Isolada por Região (RegionContext global)**: 27/04/2026
+- **RBAC (Admin/Operador) + Sistema Fechado + Auditoria**: 27/04/2026
 
 ## Arquitetura
 
@@ -107,6 +108,24 @@ Criar uma aplicação web responsiva chamada "D1 Custódia" para operação log�
 - [x] **Troca instantânea** entre regiões sem reload (sincronização entre abas via `storage` event)
 - [x] **Headings dinâmicos** ("Dashboard · Guarulhos", "Central de Custódias · São Paulo")
 - [x] **Testes automatizados**: `/app/backend/tests/test_region_iter5.py` (8/9 ✅, 100% frontend)
+
+### Fase 6 - RBAC + Sistema Fechado + Auditoria (27/04/2026)
+- [x] **Roles**: `admin` e `operator` (campo `role` no User)
+- [x] **Vínculo de região**: Operador é amarrado a UMA região (`region` obrigatório no cadastro)
+- [x] **Cadastro 100% fechado**: `POST /api/auth/register` retorna 403; link "Cadastre-se" removido do Login; rota `/register` redireciona para `/login`
+- [x] **CRUD de usuários (admin only)**: `GET/POST/PATCH/DELETE /api/users`
+- [x] **Tela "Gestão de Usuários"** (`/usuarios`): criar/editar/desativar/reativar com modal acessível
+- [x] **Mensagem genérica de erro**: "Acesso não autorizado. Procure o administrador." em qualquer falha de login
+- [x] **Brute-force lockout**: 5 tentativas inválidas em 15min → HTTP 423 (UI mostra alerta âmbar)
+- [x] **Soft-delete de usuário** (`is_active=false`) — preserva histórico; admin não pode desativar a si mesmo
+- [x] **Operador travado na região**: `/usuarios` e `/auditoria` redirecionam para `/dashboard`; switcher mostra apenas a região do operador com cadeado
+- [x] **RBAC em custódias**: operador só CRIA/EDITA na própria região (403 fora dela). Lê ambas (consulta).
+- [x] **Audit log persistido** (`audit_logs`): login_success, login_failed, login_locked, user_created/updated/deleted, bulk_update — com IP via X-Forwarded-For
+- [x] **Tela "Auditoria"** (`/auditoria`, admin only): filtros por ação e e-mail, ordem cronológica reversa
+- [x] **Indicador de role no sidebar**: Administrador (roxo) ou Operador · {região} (azul)
+- [x] **Validação final no PATCH /users**: ao virar operador, region precisa estar válida (mesmo se não enviada no body)
+- [x] **Limite de audit-logs**: cap em 500 itens por request (anti-abuso)
+- [x] **Testes automatizados**: `/app/backend/tests/test_rbac_iter6.py` (20/20 ✅, 100% frontend)
 
 ## Status Disponíveis
 - `pending` - Em andamento

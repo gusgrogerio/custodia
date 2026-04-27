@@ -13,7 +13,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../components/ui/select';
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '../components/ui/dialog';
 import { Users, UserPlus, Edit3, UserX, ShieldCheck, RefreshCw, Mail, MapPin, Loader2, KeyRound } from 'lucide-react';
 import { toast } from 'sonner';
@@ -275,6 +275,11 @@ export default function UserManagement() {
             <DialogTitle className="font-['Chivo']">
               {editing ? 'Editar Usuário' : 'Novo Usuário'}
             </DialogTitle>
+            <DialogDescription className="text-slate-400">
+              {editing
+                ? 'Atualize os dados do usuário. Deixe a senha em branco para mantê-la.'
+                : 'Crie um novo usuário com acesso ao sistema. Operadores devem ser vinculados a uma região.'}
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={submit} className="space-y-4">
             <div>
