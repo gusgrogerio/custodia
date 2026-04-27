@@ -12,6 +12,7 @@ import NewCustody from "./pages/NewCustody";
 import History from "./pages/History";
 import CustodyDetails from "./pages/CustodyDetails";
 import Profile from "./pages/Profile";
+import CentralCustodias from "./pages/CentralCustodias";
 
 // Loading component
 function LoadingScreen() {
@@ -98,6 +99,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <History />
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/central" 
+        element={
+          <ProtectedRoute>
+            <CentralCustodias />
           </ProtectedRoute>
         } 
       />

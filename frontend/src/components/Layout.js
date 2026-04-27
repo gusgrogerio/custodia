@@ -9,13 +9,15 @@ import {
   LogOut,
   Package,
   Menu,
-  X
+  X,
+  Boxes
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { useState } from 'react';
 
 const navItems = [
   { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+  { path: '/central', icon: Boxes, label: 'Central' },
   { path: '/nova-custodia', icon: PlusCircle, label: 'Nova Custódia' },
   { path: '/historico', icon: History, label: 'Histórico' },
   { path: '/perfil', icon: User, label: 'Perfil' },

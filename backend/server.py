@@ -163,6 +163,8 @@ class CustodyCreate(BaseModel):
     client_name: str
     phone: Optional[str] = None
     address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
     occurrence_type: str
     observation: Optional[str] = None
     volume_current: int = 1
@@ -171,6 +173,12 @@ class CustodyCreate(BaseModel):
 class CustodyUpdate(BaseModel):
     status: Optional[str] = None
     observation: Optional[str] = None
+    responsible_id: Optional[str] = None
+
+class BulkUpdateRequest(BaseModel):
+    custody_ids: List[str]
+    action: str  # mark_returned, update_responsible
+    responsible_id: Optional[str] = None
 
 # Helper function to generate box number
 async def generate_box_number() -> str:
@@ -340,6 +348,8 @@ async def create_custody(data: CustodyCreate, request: Request):
         "client_name": data.client_name,
         "phone": data.phone,
         "address": data.address,
+        "city": data.city,
+        "state": data.state,
         "occurrence_type": data.occurrence_type,
         "observation": data.observation,
         "volume_current": data.volume_current,
@@ -380,6 +390,11 @@ async def list_custodies(
     expired: Optional[bool] = None,
     near_return: Optional[bool] = None,
     ready_for_return: Optional[bool] = None,
+    no_photos: Optional[bool] = None,
+    no_treatment: Optional[bool] = None,
+    search_code: Optional[str] = None,
+    search_box: Optional[str] = None,
+    sort_by: Optional[str] = None,
     limit: int = 100,
     skip: int = 0
 ):
@@ -400,15 +415,30 @@ async def list_custodies(
         else:
             query["created_at"] = {"$lte": date_to}
     if expired:
-        # Consider expired if pending and older than 24 hours
         expired_threshold = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
         query["status"] = "pending"
         query["created_at"] = {"$lt": expired_threshold}
     
+    # Search by shipment code
+    if search_code:
+        query["shipment_code"] = {"$regex": search_code, "$options": "i"}
+    
+    # Search by box number
+    if search_box:
+        query["box_number"] = {"$regex": search_box, "$options": "i"}
+    
+    # Filter for no photos
+    if no_photos:
+        query["$or"] = [{"photos": {"$exists": False}}, {"photos": {"$size": 0}}]
+    
+    # Filter for no treatment (never updated since creation)
+    if no_treatment:
+        query["$expr"] = {"$eq": ["$last_treatment_at", "$created_at"]}
+    
     # Filter for near return (8+ days without treatment)
     if near_return:
         near_threshold = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat()
-        query["status"] = {"$nin": ["resolved", "ready_for_return"]}
+        query["status"] = {"$nin": ["resolved", "ready_for_return", "returned"]}
         query["last_treatment_at"] = {"$lt": near_threshold}
     
     # Filter for ready for return (10+ days without treatment)
@@ -416,10 +446,19 @@ async def list_custodies(
         return_threshold = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
         query["$or"] = [
             {"status": "ready_for_return"},
-            {"status": {"$nin": ["resolved", "ready_for_return"]}, "last_treatment_at": {"$lt": return_threshold}}
+            {"status": {"$nin": ["resolved", "ready_for_return", "returned"]}, "last_treatment_at": {"$lt": return_threshold}}
         ]
     
-    custodies = await db.custodies.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    # Determine sort order
+    sort_field = "created_at"
+    sort_order = -1
+    if sort_by == "days_without_treatment":
+        sort_field = "last_treatment_at"
+        sort_order = 1  # Oldest first (most days)
+    elif sort_by == "updated_at":
+        sort_field = "updated_at"
+    
+    custodies = await db.custodies.find(query, {"_id": 0}).sort(sort_field, sort_order).skip(skip).limit(limit).to_list(limit)
     
     # Add treatment info to each custody
     for custody in custodies:
@@ -427,6 +466,100 @@ async def list_custodies(
         custody.update(treatment_info)
     
     return custodies
+
+# Central stats endpoint with more details
+@api_router.get("/custodies/central-stats")
+async def get_central_stats(request: Request):
+    await get_current_user(request)
+    
+    near_return_threshold = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat()
+    return_threshold = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+    
+    total = await db.custodies.count_documents({})
+    
+    # Aguardando retorno (pending, not near return)
+    awaiting_return = await db.custodies.count_documents({
+        "status": "pending",
+        "last_treatment_at": {"$gte": near_return_threshold}
+    })
+    
+    # Próximas da devolução (8-9 days)
+    near_return = await db.custodies.count_documents({
+        "status": {"$nin": ["resolved", "ready_for_return", "returned"]},
+        "last_treatment_at": {"$lt": near_return_threshold, "$gte": return_threshold}
+    })
+    
+    # Aptas para devolução (10+ days)
+    ready_for_return = await db.custodies.count_documents({
+        "$or": [
+            {"status": "ready_for_return"},
+            {"status": {"$nin": ["resolved", "ready_for_return", "returned"]}, "last_treatment_at": {"$lt": return_threshold}}
+        ]
+    })
+    
+    # Finalizadas
+    finalized = await db.custodies.count_documents({"status": {"$in": ["resolved", "returned"]}})
+    
+    # Sem foto
+    no_photos = await db.custodies.count_documents({
+        "$or": [{"photos": {"$exists": False}}, {"photos": {"$size": 0}}]
+    })
+    
+    return {
+        "total": total,
+        "awaiting_return": awaiting_return,
+        "near_return": near_return,
+        "ready_for_return": ready_for_return,
+        "finalized": finalized,
+        "no_photos": no_photos
+    }
+
+# Bulk update endpoint
+@api_router.post("/custodies/bulk-update")
+async def bulk_update_custodies(data: BulkUpdateRequest, request: Request):
+    user = await get_current_user(request)
+    
+    now = datetime.now(timezone.utc).isoformat()
+    updated_count = 0
+    
+    for custody_id in data.custody_ids:
+        custody = await db.custodies.find_one({"id": custody_id})
+        if not custody:
+            continue
+        
+        update_data = {"updated_at": now}
+        history_entry = {
+            "timestamp": now,
+            "user_id": user["id"],
+            "user_name": user["name"]
+        }
+        
+        if data.action == "mark_returned":
+            update_data["status"] = "returned"
+            update_data["last_treatment_at"] = now
+            history_entry["action"] = "bulk_status_change"
+            history_entry["details"] = "Marcado como devolvido (ação em massa)"
+        elif data.action == "update_responsible" and data.responsible_id:
+            # Get new responsible user
+            new_responsible = await db.users.find_one({"_id": ObjectId(data.responsible_id)})
+            if new_responsible:
+                update_data["responsible_id"] = data.responsible_id
+                update_data["responsible_name"] = new_responsible.get("name", "Desconhecido")
+                history_entry["action"] = "bulk_responsible_change"
+                history_entry["details"] = f"Responsável alterado para: {new_responsible.get('name')}"
+        else:
+            continue
+        
+        await db.custodies.update_one(
+            {"id": custody_id},
+            {
+                "$set": update_data,
+                "$push": {"history": history_entry}
+            }
+        )
+        updated_count += 1
+    
+    return {"updated_count": updated_count}
 
 @api_router.get("/custodies/stats")
 async def get_custody_stats(request: Request):

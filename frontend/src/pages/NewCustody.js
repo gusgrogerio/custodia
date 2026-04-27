@@ -123,6 +123,8 @@ export default function NewCustody() {
     client_name: '',
     phone: '',
     address: '',
+    city: '',
+    state: '',
     occurrence_type: '',
     observation: '',
     volume_current: 1,
@@ -303,6 +305,32 @@ export default function NewCustody() {
                 className="bg-slate-950 border-slate-700 text-slate-100 placeholder:text-slate-600 focus:border-blue-500"
                 data-testid="address-input"
               />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="city" className="text-slate-300">Cidade</Label>
+                <Input
+                  id="city"
+                  placeholder="Cidade"
+                  value={formData.city}
+                  onChange={(e) => handleChange('city', e.target.value)}
+                  className="bg-slate-950 border-slate-700 text-slate-100 placeholder:text-slate-600 focus:border-blue-500"
+                  data-testid="city-input"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="state" className="text-slate-300">Estado (UF)</Label>
+                <Input
+                  id="state"
+                  placeholder="SP"
+                  maxLength={2}
+                  value={formData.state}
+                  onChange={(e) => handleChange('state', e.target.value.toUpperCase())}
+                  className="bg-slate-950 border-slate-700 text-slate-100 placeholder:text-slate-600 focus:border-blue-500"
+                  data-testid="state-input"
+                />
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">

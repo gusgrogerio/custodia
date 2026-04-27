@@ -124,6 +124,139 @@ class D1CustodiaAPITester:
                 print(f"   ✅ All required stats fields present")
         return success
 
+    def test_get_central_stats(self):
+        """Test central custody statistics for Central de Custódias page"""
+        success, response = self.run_test(
+            "Get Central Stats",
+            "GET",
+            "custodies/central-stats",
+            200
+        )
+        if success:
+            total = response.get('total', 0)
+            awaiting_return = response.get('awaiting_return', 0)
+            near_return = response.get('near_return', 0)
+            ready_for_return = response.get('ready_for_return', 0)
+            finalized = response.get('finalized', 0)
+            no_photos = response.get('no_photos', 0)
+            
+            print(f"   Central Stats: Total: {total}, Awaiting: {awaiting_return}, Near Return: {near_return}")
+            print(f"   Ready for Return: {ready_for_return}, Finalized: {finalized}, No Photos: {no_photos}")
+            
+            # Verify all required fields are present
+            required_fields = ['total', 'awaiting_return', 'near_return', 'ready_for_return', 'finalized', 'no_photos']
+            missing_fields = [field for field in required_fields if field not in response]
+            if missing_fields:
+                print(f"   ❌ Missing fields in central stats: {missing_fields}")
+                return False
+            else:
+                print(f"   ✅ All required central stats fields present")
+        return success
+
+    def test_custodies_with_search_filters(self):
+        """Test custodies endpoint with search_code and search_box filters"""
+        # Test search_code filter
+        success1, response1 = self.run_test(
+            "Search Custodies by Code",
+            "GET",
+            "custodies?search_code=TEST",
+            200
+        )
+        
+        # Test search_box filter  
+        success2, response2 = self.run_test(
+            "Search Custodies by Box",
+            "GET",
+            "custodies?search_box=CX-",
+            200
+        )
+        
+        if success1 and success2:
+            print(f"   Search by code found: {len(response1)} custodies")
+            print(f"   Search by box found: {len(response2)} custodies")
+            print(f"   ✅ Search filters working correctly")
+            return True
+        return False
+
+    def test_custodies_with_special_filters(self):
+        """Test custodies endpoint with no_photos and no_treatment filters"""
+        # Test no_photos filter
+        success1, response1 = self.run_test(
+            "Filter Custodies with No Photos",
+            "GET",
+            "custodies?no_photos=true",
+            200
+        )
+        
+        # Test no_treatment filter
+        success2, response2 = self.run_test(
+            "Filter Custodies with No Treatment",
+            "GET",
+            "custodies?no_treatment=true",
+            200
+        )
+        
+        if success1 and success2:
+            print(f"   No photos filter found: {len(response1)} custodies")
+            print(f"   No treatment filter found: {len(response2)} custodies")
+            print(f"   ✅ Special filters working correctly")
+            return True
+        return False
+
+    def test_custodies_sort_by_days(self):
+        """Test custodies endpoint with sort_by=days_without_treatment"""
+        success, response = self.run_test(
+            "Sort Custodies by Days Without Treatment",
+            "GET",
+            "custodies?sort_by=days_without_treatment&limit=10",
+            200
+        )
+        
+        if success:
+            print(f"   Sorted custodies found: {len(response)} custodies")
+            if len(response) > 1:
+                # Check if sorting is working (first should have more days than last)
+                first_days = response[0].get('days_without_treatment', 0)
+                last_days = response[-1].get('days_without_treatment', 0)
+                print(f"   First custody days: {first_days}, Last custody days: {last_days}")
+                if first_days >= last_days:
+                    print(f"   ✅ Sorting by days without treatment working correctly")
+                else:
+                    print(f"   ❌ Sorting by days without treatment not working correctly")
+                    return False
+            else:
+                print(f"   ✅ Sort endpoint working (insufficient data to verify order)")
+            return True
+        return False
+
+    def test_bulk_update_mark_returned(self):
+        """Test bulk update endpoint with mark_returned action"""
+        if not self.custody_id:
+            print("❌ No custody ID available for bulk update testing")
+            return False
+            
+        success, response = self.run_test(
+            "Bulk Update Mark as Returned",
+            "POST",
+            "custodies/bulk-update",
+            200,
+            data={
+                "custody_ids": [self.custody_id],
+                "action": "mark_returned"
+            }
+        )
+        
+        if success:
+            updated_count = response.get('updated_count', 0)
+            print(f"   Bulk update successful: {updated_count} custodies updated")
+            if updated_count > 0:
+                print(f"   ✅ Bulk update mark_returned working correctly")
+                return True
+            else:
+                print(f"   ❌ Bulk update didn't update any custodies")
+                return False
+        return False
+
     def test_list_custodies(self):
         """Test list custodies"""
         success, response = self.run_test(
@@ -341,13 +474,18 @@ def main():
         ("Login", lambda: tester.test_login("admin", "123456789")),
         ("Get Current User", tester.test_get_me),
         ("Get Stats", tester.test_get_stats),
+        ("Get Central Stats", tester.test_get_central_stats),
         ("List Custodies", tester.test_list_custodies),
+        ("Search Filters", tester.test_custodies_with_search_filters),
+        ("Special Filters", tester.test_custodies_with_special_filters),
+        ("Sort by Days", tester.test_custodies_sort_by_days),
         ("Get Alerts", tester.test_get_alerts),
         ("Create Custody", tester.test_create_custody),
         ("Get Custody Details", tester.test_get_custody),
         ("Get Label", tester.test_get_label),
         ("Update Custody Status", tester.test_update_custody_status),
         ("Add Observation", tester.test_add_observation),
+        ("Bulk Update Mark Returned", tester.test_bulk_update_mark_returned),
         ("List Users", tester.test_list_users),
         ("Export CSV", tester.test_export_csv),
         ("Logout", tester.test_logout),
