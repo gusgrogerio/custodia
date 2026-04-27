@@ -165,6 +165,7 @@ class CustodyCreate(BaseModel):
     address: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
+    region: str = "São Paulo"  # "São Paulo" or "Guarulhos"
     occurrence_type: str
     observation: Optional[str] = None
     volume_current: int = 1
@@ -174,6 +175,7 @@ class CustodyUpdate(BaseModel):
     status: Optional[str] = None
     observation: Optional[str] = None
     responsible_id: Optional[str] = None
+    region: Optional[str] = None
 
 class BulkUpdateRequest(BaseModel):
     custody_ids: List[str]
@@ -350,6 +352,7 @@ async def create_custody(data: CustodyCreate, request: Request):
         "address": data.address,
         "city": data.city,
         "state": data.state,
+        "region": data.region,
         "occurrence_type": data.occurrence_type,
         "observation": data.observation,
         "volume_current": data.volume_current,
@@ -366,7 +369,7 @@ async def create_custody(data: CustodyCreate, request: Request):
             "timestamp": now,
             "user_id": user["id"],
             "user_name": user["name"],
-            "details": f"Custódia criada - Caixa: {box_number} - Volume: {data.volume_current}/{data.volume_total} - Ocorrência: {data.occurrence_type}"
+            "details": f"Custódia criada - Caixa: {box_number} - Região: {data.region} - Volume: {data.volume_current}/{data.volume_total} - Ocorrência: {data.occurrence_type}"
         }]
     }
     
@@ -394,6 +397,8 @@ async def list_custodies(
     no_treatment: Optional[bool] = None,
     search_code: Optional[str] = None,
     search_box: Optional[str] = None,
+    search_query: Optional[str] = None,
+    region: Optional[str] = None,
     sort_by: Optional[str] = None,
     limit: int = 100,
     skip: int = 0
@@ -407,6 +412,8 @@ async def list_custodies(
         query["occurrence_type"] = occurrence_type
     if responsible_id:
         query["responsible_id"] = responsible_id
+    if region:
+        query["region"] = region
     if date_from:
         query["created_at"] = {"$gte": date_from}
     if date_to:
@@ -427,9 +434,18 @@ async def list_custodies(
     if search_box:
         query["box_number"] = {"$regex": search_box, "$options": "i"}
     
+    # Universal search (code, box, or client name)
+    if search_query:
+        query["$or"] = [
+            {"shipment_code": {"$regex": search_query, "$options": "i"}},
+            {"box_number": {"$regex": search_query, "$options": "i"}},
+            {"client_name": {"$regex": search_query, "$options": "i"}}
+        ]
+    
     # Filter for no photos
     if no_photos:
-        query["$or"] = [{"photos": {"$exists": False}}, {"photos": {"$size": 0}}]
+        if "$or" not in query:
+            query["$or"] = [{"photos": {"$exists": False}}, {"photos": {"$size": 0}}]
     
     # Filter for no treatment (never updated since creation)
     if no_treatment:
@@ -513,6 +529,46 @@ async def get_central_stats(request: Request):
         "finalized": finalized,
         "no_photos": no_photos
     }
+
+# Region stats endpoint
+@api_router.get("/custodies/region-stats")
+async def get_region_stats(request: Request):
+    await get_current_user(request)
+    
+    near_return_threshold = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat()
+    return_threshold = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+    
+    regions = ["São Paulo", "Guarulhos"]
+    result = {}
+    
+    for region in regions:
+        total = await db.custodies.count_documents({"region": region})
+        
+        # Near return (8-9 days)
+        near_return = await db.custodies.count_documents({
+            "region": region,
+            "status": {"$nin": ["resolved", "ready_for_return", "returned"]},
+            "last_treatment_at": {"$lt": near_return_threshold, "$gte": return_threshold}
+        })
+        
+        # Ready for return (10+ days)
+        ready_for_return = await db.custodies.count_documents({
+            "region": region,
+            "$or": [
+                {"status": "ready_for_return"},
+                {"status": {"$nin": ["resolved", "ready_for_return", "returned"]}, "last_treatment_at": {"$lt": return_threshold}}
+            ]
+        })
+        
+        result[region] = {
+            "total": total,
+            "near_return": near_return,
+            "ready_for_return": ready_for_return,
+            "has_alert": near_return > 0 or ready_for_return > 0,
+            "alert_type": "red" if ready_for_return > 0 else ("yellow" if near_return > 0 else None)
+        }
+    
+    return result
 
 # Bulk update endpoint
 @api_router.post("/custodies/bulk-update")

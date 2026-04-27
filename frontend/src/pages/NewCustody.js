@@ -125,6 +125,7 @@ export default function NewCustody() {
     address: '',
     city: '',
     state: '',
+    region: 'São Paulo',
     occurrence_type: '',
     observation: '',
     volume_current: 1,
@@ -267,32 +268,57 @@ export default function NewCustody() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="occurrence_type" className="text-slate-300">
-                  Tipo de Ocorrência <span className="text-red-400">*</span>
+                <Label htmlFor="region" className="text-slate-300">
+                  Região <span className="text-red-400">*</span>
                 </Label>
                 <Select 
-                  value={formData.occurrence_type} 
-                  onValueChange={(value) => handleChange('occurrence_type', value)}
+                  value={formData.region} 
+                  onValueChange={(value) => handleChange('region', value)}
                 >
                   <SelectTrigger 
                     className="bg-slate-950 border-slate-700 text-slate-100 focus:border-blue-500"
-                    data-testid="occurrence-type-select"
+                    data-testid="region-select"
                   >
-                    <SelectValue placeholder="Selecione o tipo" />
+                    <SelectValue placeholder="Selecione a região" />
                   </SelectTrigger>
                   <SelectContent className="bg-slate-900 border-slate-700 z-50">
-                    {occurrenceTypes.map((type) => (
-                      <SelectItem 
-                        key={type.value} 
-                        value={type.value}
-                        className="text-slate-200 focus:bg-slate-800 focus:text-slate-100 cursor-pointer"
-                      >
-                        {type.label}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="São Paulo" className="text-slate-200 focus:bg-slate-800 focus:text-slate-100 cursor-pointer">
+                      São Paulo
+                    </SelectItem>
+                    <SelectItem value="Guarulhos" className="text-slate-200 focus:bg-slate-800 focus:text-slate-100 cursor-pointer">
+                      Guarulhos
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="occurrence_type" className="text-slate-300">
+                Tipo de Ocorrência <span className="text-red-400">*</span>
+              </Label>
+              <Select 
+                value={formData.occurrence_type} 
+                onValueChange={(value) => handleChange('occurrence_type', value)}
+              >
+                <SelectTrigger 
+                  className="bg-slate-950 border-slate-700 text-slate-100 focus:border-blue-500"
+                  data-testid="occurrence-type-select"
+                >
+                  <SelectValue placeholder="Selecione o tipo" />
+                </SelectTrigger>
+                <SelectContent className="bg-slate-900 border-slate-700 z-50">
+                  {occurrenceTypes.map((type) => (
+                    <SelectItem 
+                      key={type.value} 
+                      value={type.value}
+                      className="text-slate-200 focus:bg-slate-800 focus:text-slate-100 cursor-pointer"
+                    >
+                      {type.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">

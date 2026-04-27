@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
@@ -19,10 +19,8 @@ import {
   Search,
   ChevronDown,
   ChevronUp,
-  Check,
-  Users,
-  ImageOff,
-  FileSpreadsheet
+  FileSpreadsheet,
+  MapPin
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -81,6 +79,8 @@ const occurrenceTypes = {
   'outro': 'Outro',
 };
 
+const REGIONS = ['São Paulo', 'Guarulhos'];
+
 function MetricCard({ title, value, icon: Icon, color, onClick, active }) {
   return (
     <div 
@@ -102,8 +102,41 @@ function MetricCard({ title, value, icon: Icon, color, onClick, active }) {
   );
 }
 
+// Region Tab component
+function RegionTab({ region, count, isActive, alertType, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`relative px-6 py-3 font-semibold text-sm transition-all duration-200 rounded-t-xl ${
+        isActive 
+          ? 'bg-slate-900 text-blue-400 border-t border-l border-r border-slate-700' 
+          : 'bg-slate-800/50 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+      }`}
+      data-testid={`region-tab-${region.toLowerCase().replace(' ', '-')}`}
+    >
+      <div className="flex items-center gap-2">
+        <MapPin className="w-4 h-4" />
+        <span>{region}</span>
+        <Badge className="bg-slate-700 text-slate-300 text-xs">{count}</Badge>
+        
+        {/* Alert indicator */}
+        {alertType && (
+          <span className={`w-2.5 h-2.5 rounded-full ${
+            alertType === 'red' ? 'bg-red-500 animate-pulse' : 'bg-amber-500 animate-pulse'
+          }`} />
+        )}
+      </div>
+      
+      {/* Active indicator */}
+      {isActive && (
+        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500" />
+      )}
+    </button>
+  );
+}
+
 // Mobile card component
-function CustodyCard({ custody, isSelected, onSelect, onView }) {
+function CustodyCard({ custody, isSelected, onSelect, onView, searchQuery }) {
   const [expanded, setExpanded] = useState(false);
   
   const getDisplayStatus = () => {
@@ -116,6 +149,16 @@ function CustodyCard({ custody, isSelected, onSelect, onView }) {
 
   const status = getDisplayStatus();
   const StatusIcon = statusMap[status]?.icon || Clock;
+  
+  // Highlight matching text
+  const highlightText = (text) => {
+    if (!searchQuery || !text) return text;
+    const regex = new RegExp(`(${searchQuery})`, 'gi');
+    const parts = text.split(regex);
+    return parts.map((part, i) => 
+      regex.test(part) ? <mark key={i} className="bg-yellow-500/30 text-yellow-200 px-0.5 rounded">{part}</mark> : part
+    );
+  };
 
   return (
     <div className={`bg-slate-900 border rounded-xl overflow-hidden transition-all ${
@@ -133,20 +176,26 @@ function CustodyCard({ custody, isSelected, onSelect, onView }) {
         />
         <div className="flex-1 min-w-0" onClick={() => setExpanded(!expanded)}>
           <div className="flex items-center justify-between">
-            <span className="font-mono text-blue-400 font-semibold">{custody.box_number || 'N/A'}</span>
+            <span className="font-mono text-blue-400 font-semibold">{highlightText(custody.box_number || 'N/A')}</span>
             <Badge className={statusMap[status]?.class || 'status-pending'}>
               <StatusIcon className="w-3 h-3 mr-1" />
               {statusMap[status]?.label || 'Em andamento'}
             </Badge>
           </div>
-          <p className="text-slate-200 font-medium mt-1">{custody.client_name}</p>
-          <p className="text-slate-400 text-sm">{custody.shipment_code}</p>
+          <p className="text-slate-200 font-medium mt-1">{highlightText(custody.client_name)}</p>
+          <p className="text-slate-400 text-sm">{highlightText(custody.shipment_code)}</p>
           
-          {custody.days_without_treatment >= 8 && (
-            <Badge className={`mt-2 ${custody.days_without_treatment >= 10 ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}`}>
-              {custody.days_without_treatment >= 10 ? 'Pode devolver' : `${custody.days_without_treatment} dias`}
+          <div className="flex items-center gap-2 mt-2">
+            <Badge className="bg-slate-700 text-slate-300 text-xs">
+              <MapPin className="w-3 h-3 mr-1" />
+              {custody.region || 'São Paulo'}
             </Badge>
-          )}
+            {custody.days_without_treatment >= 8 && (
+              <Badge className={`${custody.days_without_treatment >= 10 ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                {custody.days_without_treatment >= 10 ? 'Pode devolver' : `${custody.days_without_treatment} dias`}
+              </Badge>
+            )}
+          </div>
         </div>
         <button onClick={() => setExpanded(!expanded)} className="text-slate-400">
           {expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
@@ -195,14 +244,22 @@ export default function CentralCustodias() {
   const { getAuthHeaders } = useAuth();
   const [custodies, setCustodies] = useState([]);
   const [stats, setStats] = useState({ total: 0, awaiting_return: 0, near_return: 0, ready_for_return: 0, finalized: 0, no_photos: 0 });
+  const [regionStats, setRegionStats] = useState({});
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
   
+  // Active region tab - load from localStorage
+  const [activeRegion, setActiveRegion] = useState(() => {
+    return localStorage.getItem('central_region') || 'São Paulo';
+  });
+  
+  // Search query for real-time search
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  
   const [filters, setFilters] = useState({
-    search_code: '',
-    search_box: '',
     status: '',
     occurrence_type: '',
     responsible_id: '',
@@ -215,13 +272,32 @@ export default function CentralCustodias() {
     sort_by: ''
   });
 
-  const fetchData = async () => {
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Save active region to localStorage
+  useEffect(() => {
+    localStorage.setItem('central_region', activeRegion);
+  }, [activeRegion]);
+
+  const fetchData = useCallback(async () => {
     try {
       const headers = getAuthHeaders();
       const params = new URLSearchParams();
       
-      if (filters.search_code) params.append('search_code', filters.search_code);
-      if (filters.search_box) params.append('search_box', filters.search_box);
+      // Always filter by active region
+      params.append('region', activeRegion);
+      
+      // Apply search query
+      if (debouncedSearch) {
+        params.append('search_query', debouncedSearch);
+      }
+      
       if (filters.status) params.append('status', filters.status);
       if (filters.occurrence_type) params.append('occurrence_type', filters.occurrence_type);
       if (filters.responsible_id) params.append('responsible_id', filters.responsible_id);
@@ -234,14 +310,16 @@ export default function CentralCustodias() {
       if (filters.sort_by) params.append('sort_by', filters.sort_by);
       params.append('limit', '500');
       
-      const [custodiesRes, statsRes, usersRes] = await Promise.all([
+      const [custodiesRes, statsRes, regionStatsRes, usersRes] = await Promise.all([
         axios.get(`${API}/custodies?${params.toString()}`, { withCredentials: true, headers }),
         axios.get(`${API}/custodies/central-stats`, { withCredentials: true, headers }),
+        axios.get(`${API}/custodies/region-stats`, { withCredentials: true, headers }),
         axios.get(`${API}/users`, { withCredentials: true, headers })
       ]);
       
       setCustodies(custodiesRes.data);
       setStats(statsRes.data);
+      setRegionStats(regionStatsRes.data);
       setUsers(usersRes.data);
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -249,17 +327,18 @@ export default function CentralCustodias() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeRegion, debouncedSearch, filters, getAuthHeaders]);
 
   useEffect(() => {
     fetchData();
-  }, [filters]);
+  }, [fetchData]);
 
-  const handleExport = async (format) => {
+  const handleExport = async () => {
     try {
       const headers = getAuthHeaders();
       const params = new URLSearchParams();
       
+      params.append('region', activeRegion);
       if (filters.status) params.append('status', filters.status);
       if (filters.date_from) params.append('date_from', filters.date_from.toISOString());
       if (filters.date_to) params.append('date_to', filters.date_to.toISOString());
@@ -273,7 +352,7 @@ export default function CentralCustodias() {
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `central_custodias_${new Date().toISOString().split('T')[0]}.csv`);
+      link.setAttribute('download', `central_${activeRegion.replace(' ', '_')}_${new Date().toISOString().split('T')[0]}.csv`);
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -300,7 +379,6 @@ export default function CentralCustodias() {
         }, { withCredentials: true, headers });
         toast.success(`${selectedIds.length} custódias marcadas como devolvidas`);
       } else if (action === 'export') {
-        // Export selected to CSV
         const selectedCustodies = custodies.filter(c => selectedIds.includes(c.id));
         const csv = generateCSV(selectedCustodies);
         downloadCSV(csv, 'custodias_selecionadas.csv');
@@ -316,7 +394,7 @@ export default function CentralCustodias() {
   };
 
   const generateCSV = (data) => {
-    const headers = ['Nº Caixa', 'Código', 'Cliente', 'Telefone', 'Cidade', 'Estado', 'Ocorrência', 'Status', 'Dias s/ Tratativa', 'Responsável'];
+    const headers = ['Nº Caixa', 'Código', 'Cliente', 'Telefone', 'Cidade', 'Estado', 'Região', 'Ocorrência', 'Status', 'Dias s/ Tratativa', 'Responsável'];
     const rows = data.map(c => [
       c.box_number || '',
       c.shipment_code,
@@ -324,6 +402,7 @@ export default function CentralCustodias() {
       c.phone || '',
       c.city || '',
       c.state || '',
+      c.region || 'São Paulo',
       occurrenceTypes[c.occurrence_type] || c.occurrence_type,
       statusMap[c.status]?.label || c.status,
       c.days_without_treatment || 0,
@@ -359,8 +438,6 @@ export default function CentralCustodias() {
 
   const clearFilters = () => {
     setFilters({
-      search_code: '',
-      search_box: '',
       status: '',
       occurrence_type: '',
       responsible_id: '',
@@ -372,6 +449,7 @@ export default function CentralCustodias() {
       no_treatment: false,
       sort_by: ''
     });
+    setSearchQuery('');
   };
 
   const formatDate = (dateString) => {
@@ -392,9 +470,19 @@ export default function CentralCustodias() {
     return 'pending';
   };
 
-  const hasActiveFilters = filters.search_code || filters.search_box || filters.status || 
-    filters.occurrence_type || filters.responsible_id || filters.date_from || filters.date_to ||
-    filters.near_return || filters.ready_for_return || filters.no_photos || filters.no_treatment;
+  // Highlight matching text in table
+  const highlightText = (text) => {
+    if (!debouncedSearch || !text) return text;
+    const regex = new RegExp(`(${debouncedSearch})`, 'gi');
+    const parts = String(text).split(regex);
+    return parts.map((part, i) => 
+      regex.test(part) ? <mark key={i} className="bg-yellow-500/30 text-yellow-200 px-0.5 rounded">{part}</mark> : part
+    );
+  };
+
+  const hasActiveFilters = filters.status || filters.occurrence_type || filters.responsible_id || 
+    filters.date_from || filters.date_to || filters.near_return || filters.ready_for_return || 
+    filters.no_photos || filters.no_treatment || debouncedSearch;
 
   if (loading) {
     return (
@@ -408,12 +496,12 @@ export default function CentralCustodias() {
 
   return (
     <Layout>
-      <div className="space-y-6 animate-fadeIn">
+      <div className="space-y-4 animate-fadeIn">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-2xl sm:text-3xl font-black text-slate-50 font-['Chivo']">Central de Custódias</h1>
-            <p className="text-slate-400 text-sm mt-1">{custodies.length} registros encontrados</p>
+            <p className="text-slate-400 text-sm mt-1">{activeRegion} • {custodies.length} registros</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <Button 
@@ -435,13 +523,47 @@ export default function CentralCustodias() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent className="bg-slate-900 border-slate-700">
-                <DropdownMenuItem onClick={() => handleExport('csv')} className="text-slate-200 cursor-pointer">
+                <DropdownMenuItem onClick={handleExport} className="text-slate-200 cursor-pointer">
                   <FileSpreadsheet className="w-4 h-4 mr-2" />
                   Exportar CSV/Excel
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
+        </div>
+
+        {/* Search Bar - Real Time */}
+        <div className="relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+          <Input
+            placeholder="Buscar por código da remessa, número da caixa ou nome do cliente..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-12 h-12 bg-slate-900 border-slate-700 text-slate-100 text-base placeholder:text-slate-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            data-testid="central-search-input"
+          />
+          {searchQuery && (
+            <button 
+              onClick={() => setSearchQuery('')}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
+        </div>
+
+        {/* Region Tabs */}
+        <div className="flex gap-1 border-b border-slate-800">
+          {REGIONS.map((region) => (
+            <RegionTab
+              key={region}
+              region={region}
+              count={regionStats[region]?.total || 0}
+              isActive={activeRegion === region}
+              alertType={regionStats[region]?.alert_type}
+              onClick={() => setActiveRegion(region)}
+            />
+          ))}
         </div>
 
         {/* Metrics Cards */}
@@ -496,36 +618,6 @@ export default function CentralCustodias() {
                   <X className="w-4 h-4 mr-1" /> Limpar
                 </Button>
               )}
-            </div>
-            
-            {/* Search Row */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="text-xs text-slate-400">Buscar por código</Label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                  <Input
-                    placeholder="Código da remessa..."
-                    value={filters.search_code}
-                    onChange={(e) => setFilters(prev => ({ ...prev, search_code: e.target.value }))}
-                    className="pl-10 bg-slate-950 border-slate-700 text-slate-100"
-                    data-testid="search-code-input"
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs text-slate-400">Buscar por nº caixa</Label>
-                <div className="relative">
-                  <Box className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                  <Input
-                    placeholder="Número da caixa..."
-                    value={filters.search_box}
-                    onChange={(e) => setFilters(prev => ({ ...prev, search_box: e.target.value }))}
-                    className="pl-10 bg-slate-950 border-slate-700 text-slate-100"
-                    data-testid="search-box-input"
-                  />
-                </div>
-              </div>
             </div>
 
             {/* Filter Row */}
@@ -706,14 +798,25 @@ export default function CentralCustodias() {
           </div>
         )}
 
+        {/* No Results Message */}
+        {custodies.length === 0 && debouncedSearch && (
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-12 text-center">
+            <Search className="w-12 h-12 text-slate-700 mx-auto mb-4" />
+            <p className="text-slate-400 text-lg">Nenhuma custódia encontrada</p>
+            <p className="text-slate-500 text-sm mt-1">Tente buscar por outro termo ou limpe os filtros</p>
+            <Button 
+              variant="outline"
+              className="mt-4 border-slate-700 text-slate-300"
+              onClick={clearFilters}
+            >
+              Limpar busca
+            </Button>
+          </div>
+        )}
+
         {/* Desktop Table */}
-        <div className="hidden lg:block bg-slate-900 border border-slate-800 rounded-xl overflow-hidden" data-testid="central-table">
-          {custodies.length === 0 ? (
-            <div className="p-12 text-center">
-              <Package className="w-12 h-12 text-slate-700 mx-auto mb-4" />
-              <p className="text-slate-400">Nenhuma custódia encontrada</p>
-            </div>
-          ) : (
+        {custodies.length > 0 && (
+          <div className="hidden lg:block bg-slate-900 border border-slate-800 rounded-xl overflow-hidden" data-testid="central-table">
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
@@ -761,11 +864,11 @@ export default function CentralCustodias() {
                         <TableCell className="font-mono text-blue-400 font-semibold">
                           <div className="flex items-center gap-2">
                             <Box className="w-4 h-4" />
-                            {custody.box_number || 'N/A'}
+                            {highlightText(custody.box_number || 'N/A')}
                           </div>
                         </TableCell>
-                        <TableCell className="font-mono text-slate-200">{custody.shipment_code}</TableCell>
-                        <TableCell className="text-slate-300">{custody.client_name}</TableCell>
+                        <TableCell className="font-mono text-slate-200">{highlightText(custody.shipment_code)}</TableCell>
+                        <TableCell className="text-slate-300">{highlightText(custody.client_name)}</TableCell>
                         <TableCell className="text-slate-400">{custody.phone || '-'}</TableCell>
                         <TableCell className="text-slate-400">
                           {custody.city || '-'}{custody.state ? ` / ${custody.state}` : ''}
@@ -819,28 +922,37 @@ export default function CentralCustodias() {
                 </TableBody>
               </Table>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Mobile Cards */}
-        <div className="lg:hidden space-y-3">
-          {custodies.length === 0 ? (
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-12 text-center">
-              <Package className="w-12 h-12 text-slate-700 mx-auto mb-4" />
-              <p className="text-slate-400">Nenhuma custódia encontrada</p>
-            </div>
-          ) : (
-            custodies.map((custody) => (
+        {custodies.length > 0 && (
+          <div className="lg:hidden space-y-3">
+            {custodies.map((custody) => (
               <CustodyCard
                 key={custody.id}
                 custody={custody}
                 isSelected={selectedIds.includes(custody.id)}
                 onSelect={() => toggleSelect(custody.id)}
                 onView={(id) => window.location.href = `/custodia/${id}`}
+                searchQuery={debouncedSearch}
               />
-            ))
-          )}
-        </div>
+            ))}
+          </div>
+        )}
+
+        {/* Empty State (no search) */}
+        {custodies.length === 0 && !debouncedSearch && (
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-12 text-center">
+            <Package className="w-12 h-12 text-slate-700 mx-auto mb-4" />
+            <p className="text-slate-400">Nenhuma custódia encontrada em {activeRegion}</p>
+            <Link to="/nova-custodia">
+              <Button className="mt-4 bg-blue-600 hover:bg-blue-500">
+                Criar Nova Custódia
+              </Button>
+            </Link>
+          </div>
+        )}
       </div>
     </Layout>
   );
