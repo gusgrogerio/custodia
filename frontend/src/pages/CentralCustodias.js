@@ -21,6 +21,7 @@ import {
   ChevronDown,
   ChevronUp,
   FileSpreadsheet,
+  Trash2,
   MapPin
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
@@ -336,6 +337,19 @@ export default function CentralCustodias() {
           action: 'mark_returned'
         }, { withCredentials: true, headers });
         toast.success(`${selectedIds.length} custódias marcadas como devolvidas`);
+      } else if (action === 'delete') {
+        if (!window.confirm(`Apagar ${selectedIds.length} custódia(s)? Esta ação NÃO pode ser desfeita.`)) {
+          return;
+        }
+        const { data } = await axios.post(`${API}/custodies/bulk-update`, {
+          custody_ids: selectedIds,
+          action: 'delete'
+        }, { withCredentials: true, headers });
+        const blocked = data.blocked_count || 0;
+        toast.success(
+          `${data.deleted_count || 0} custódia(s) apagada(s)` +
+          (blocked > 0 ? ` · ${blocked} bloqueada(s) por permissão` : '')
+        );
       } else if (action === 'export') {
         const selectedCustodies = custodies.filter(c => selectedIds.includes(c.id));
         const csv = generateCSV(selectedCustodies);
@@ -347,7 +361,7 @@ export default function CentralCustodias() {
       fetchData();
     } catch (error) {
       console.error('Error bulk action:', error);
-      toast.error('Erro ao executar ação');
+      toast.error(error.response?.data?.detail || 'Erro ao executar ação');
     }
   };
 
@@ -733,6 +747,16 @@ export default function CentralCustodias() {
               >
                 <FileSpreadsheet className="w-4 h-4 mr-2" />
                 Exportar selecionados
+              </Button>
+              <Button 
+                size="sm" 
+                variant="outline"
+                onClick={() => handleBulkAction('delete')}
+                className="border-red-500/50 text-red-400 hover:bg-red-500/20 hover:text-red-300"
+                data-testid="bulk-delete-button"
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Apagar selecionados
               </Button>
               <Button 
                 size="sm" 

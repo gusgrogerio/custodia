@@ -142,6 +142,22 @@ def get_object(path: str) -> tuple:
     resp.raise_for_status()
     return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
 
+def delete_object(path: str) -> bool:
+    """Best-effort delete from Emergent Object Storage. Never raises."""
+    try:
+        key = init_storage()
+        if not key:
+            return False
+        resp = requests.delete(
+            f"{STORAGE_URL}/objects/{path}",
+            headers={"X-Storage-Key": key},
+            timeout=30
+        )
+        return resp.status_code in (200, 202, 204, 404)
+    except Exception as e:
+        logger.warning(f"storage delete failed for {path}: {e}")
+        return False
+
 # Create the main app
 app = FastAPI(title="D1 Custódia API")
 
@@ -676,6 +692,7 @@ async def bulk_update_custodies(data: BulkUpdateRequest, request: Request):
     
     now = datetime.now(timezone.utc).isoformat()
     updated_count = 0
+    deleted_count = 0
     blocked_count = 0
     
     for custody_id in data.custody_ids:
@@ -686,6 +703,16 @@ async def bulk_update_custodies(data: BulkUpdateRequest, request: Request):
         # RBAC: operators only their region
         if not can_modify_region(user, custody.get("region")):
             blocked_count += 1
+            continue
+        
+        # Hard delete branch (no history needed)
+        if data.action == "delete":
+            for p in custody.get("photos", []) or []:
+                sp = p.get("storage_path")
+                if sp:
+                    delete_object(sp)
+            await db.custodies.delete_one({"id": custody_id})
+            deleted_count += 1
             continue
         
         update_data = {"updated_at": now}
@@ -721,8 +748,8 @@ async def bulk_update_custodies(data: BulkUpdateRequest, request: Request):
         updated_count += 1
     
     await log_audit("bulk_update", user=user, ip=get_client_ip(request),
-                    details=f"action={data.action}, atualizados={updated_count}, bloqueados_rbac={blocked_count}")
-    return {"updated_count": updated_count, "blocked_count": blocked_count}
+                    details=f"action={data.action}, atualizados={updated_count}, apagados={deleted_count}, bloqueados_rbac={blocked_count}")
+    return {"updated_count": updated_count, "deleted_count": deleted_count, "blocked_count": blocked_count}
 
 @api_router.get("/custodies/stats")
 async def get_custody_stats(request: Request, region: Optional[str] = None):
@@ -865,6 +892,43 @@ async def get_custody(custody_id: str, request: Request):
     custody.update(treatment_info)
     
     return custody
+
+@api_router.delete("/custodies/{custody_id}")
+async def delete_custody(custody_id: str, request: Request):
+    """Hard delete a custody. Admin (any region) or operator (own region only)."""
+    user = await get_current_user(request)
+    
+    custody = await db.custodies.find_one({"id": custody_id})
+    if not custody:
+        raise HTTPException(status_code=404, detail="Custódia não encontrada.")
+    
+    # RBAC: operators only their own region
+    if not can_modify_region(user, custody.get("region")):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Operadores só podem apagar custódias da própria região ({user.get('region')})."
+        )
+    
+    # Best-effort: remove photos from Object Storage
+    photos = custody.get("photos", []) or []
+    for p in photos:
+        sp = p.get("storage_path")
+        if sp:
+            delete_object(sp)
+    
+    # Hard delete from DB
+    await db.custodies.delete_one({"id": custody_id})
+    
+    await log_audit(
+        "custody_deleted",
+        user=user,
+        ip=get_client_ip(request),
+        target_id=custody_id,
+        details=(f"Custódia apagada: caixa={custody.get('box_number')} "
+                 f"remessa={custody.get('shipment_code')} região={custody.get('region')} "
+                 f"fotos_removidas={len(photos)}")
+    )
+    return {"message": "Custódia apagada com sucesso.", "id": custody_id}
 
 @api_router.patch("/custodies/{custody_id}")
 async def update_custody(custody_id: str, data: CustodyUpdate, request: Request):

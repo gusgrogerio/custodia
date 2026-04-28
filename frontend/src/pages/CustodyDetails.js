@@ -21,7 +21,8 @@ import {
   Box,
   Printer,
   RotateCcw,
-  Bell
+  Bell,
+  Trash2
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -201,6 +202,7 @@ export default function CustodyDetails() {
   const [custody, setCustody] = useState(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [newObservation, setNewObservation] = useState('');
   const [photoUrls, setPhotoUrls] = useState({});
   const [showLabelDialog, setShowLabelDialog] = useState(false);
@@ -252,6 +254,25 @@ export default function CustodyDetails() {
       Object.values(photoUrls).forEach(url => URL.revokeObjectURL(url));
     };
   }, [id]);
+
+  const handleDelete = async () => {
+    if (!custody) return;
+    const label = custody.box_number || custody.shipment_code || 'esta custódia';
+    if (!window.confirm(`Apagar ${label}? Esta ação NÃO pode ser desfeita e removerá também as fotos associadas.`)) {
+      return;
+    }
+    setDeleting(true);
+    try {
+      const headers = getAuthHeaders();
+      await axios.delete(`${API}/custodies/${id}`, { withCredentials: true, headers });
+      toast.success('Custódia apagada com sucesso.');
+      navigate('/central');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Erro ao apagar custódia.');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const handleStatusChange = async (newStatus) => {
     setUpdating(true);
@@ -361,16 +382,29 @@ export default function CustodyDetails() {
             <ArrowLeft className="w-4 h-4 mr-1" />
             Voltar
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleGenerateLabel}
-            className="border-slate-700 text-slate-300 hover:bg-slate-800"
-            data-testid="generate-label-button"
-          >
-            <Printer className="w-4 h-4 mr-2" />
-            Gerar Etiqueta
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleGenerateLabel}
+              className="border-slate-700 text-slate-300 hover:bg-slate-800"
+              data-testid="generate-label-button"
+            >
+              <Printer className="w-4 h-4 mr-2" />
+              Gerar Etiqueta
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDelete}
+              disabled={deleting}
+              className="border-red-500/40 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+              data-testid="delete-custody-button"
+            >
+              {deleting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
+              Apagar
+            </Button>
+          </div>
         </div>
 
         {/* Alert Banner */}
