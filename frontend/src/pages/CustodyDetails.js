@@ -23,7 +23,10 @@ import {
   RotateCcw,
   Bell,
   Trash2,
-  Pencil
+  Pencil,
+  Maximize2,
+  Download,
+  X
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -210,6 +213,7 @@ export default function CustodyDetails() {
   const [editOpen, setEditOpen] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
   const [editForm, setEditForm] = useState(null);
+  const [lightboxPhoto, setLightboxPhoto] = useState(null);
   const [newObservation, setNewObservation] = useState('');
   const [photoUrls, setPhotoUrls] = useState({});
   const [showLabelDialog, setShowLabelDialog] = useState(false);
@@ -261,6 +265,30 @@ export default function CustodyDetails() {
       Object.values(photoUrls).forEach(url => URL.revokeObjectURL(url));
     };
   }, [id]);
+
+  const handleDownloadPhoto = (photo) => {
+    const url = photoUrls[photo.id];
+    if (!url) {
+      toast.error('Foto ainda carregando, tente novamente.');
+      return;
+    }
+    const ext = (photo.original_filename?.split('.').pop()) || 'jpg';
+    const fileName = `${custody.box_number || 'foto'}-${photo.type}.${ext}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  // ESC closes lightbox
+  useEffect(() => {
+    if (!lightboxPhoto) return undefined;
+    const handler = (e) => { if (e.key === 'Escape') setLightboxPhoto(null); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [lightboxPhoto]);
 
   const openEdit = () => {
     setEditForm({
@@ -631,18 +659,59 @@ export default function CustodyDetails() {
                 <div key={photo.id} className="space-y-2">
                   <p className="text-xs text-slate-400 uppercase tracking-wider capitalize">{photo.type}</p>
                   {photoUrls[photo.id] ? (
-                    <img 
-                      src={photoUrls[photo.id]}
-                      alt={photo.type}
-                      className="w-full h-48 object-cover rounded-lg border border-slate-700"
-                      data-testid={`photo-${photo.type}`}
-                    />
+                    <button
+                      type="button"
+                      onClick={() => setLightboxPhoto(photo)}
+                      className="block w-full group relative overflow-hidden rounded-lg border border-slate-700 hover:border-blue-500 transition-colors"
+                      data-testid={`open-photo-${photo.type}`}
+                      title="Clique para ampliar"
+                    >
+                      <img
+                        src={photoUrls[photo.id]}
+                        alt={photo.type}
+                        className="w-full h-48 object-cover transition-transform group-hover:scale-[1.02]"
+                        data-testid={`photo-${photo.type}`}
+                      />
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center">
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-blue-600 text-white rounded-full p-2.5 shadow-lg">
+                          <Maximize2 className="w-5 h-5" />
+                        </div>
+                      </div>
+                    </button>
                   ) : (
                     <div className="w-full h-48 bg-slate-950 rounded-lg border border-slate-700 flex items-center justify-center">
                       <Loader2 className="w-6 h-6 text-slate-600 animate-spin" />
                     </div>
                   )}
-                  <p className="text-xs text-slate-500">{formatDate(photo.uploaded_at)}</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs text-slate-500 truncate">{formatDate(photo.uploaded_at)}</p>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={!photoUrls[photo.id]}
+                        onClick={() => setLightboxPhoto(photo)}
+                        className="h-7 px-2 text-blue-400 hover:bg-blue-500/10"
+                        data-testid={`view-photo-${photo.type}`}
+                      >
+                        <Maximize2 className="w-3.5 h-3.5 mr-1" />
+                        Abrir
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={!photoUrls[photo.id]}
+                        onClick={() => handleDownloadPhoto(photo)}
+                        className="h-7 px-2 text-slate-300 hover:bg-slate-800"
+                        data-testid={`download-photo-${photo.type}`}
+                        title="Baixar foto"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -919,6 +988,58 @@ export default function CustodyDetails() {
           )}
         </DialogContent>
       </Dialog>
+      {/* Photo Lightbox */}
+      {lightboxPhoto && photoUrls[lightboxPhoto.id] && (
+        <div
+          className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn"
+          onClick={() => setLightboxPhoto(null)}
+          data-testid="photo-lightbox"
+        >
+          {/* Top bar */}
+          <div
+            className="absolute top-0 left-0 right-0 px-4 py-3 flex items-center justify-between bg-gradient-to-b from-black/70 to-transparent"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-white">
+              <p className="text-xs uppercase tracking-wider text-slate-400">{lightboxPhoto.type}</p>
+              <p className="text-sm font-semibold">
+                {custody.box_number} · {formatDate(lightboxPhoto.uploaded_at)}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => handleDownloadPhoto(lightboxPhoto)}
+                className="bg-slate-900/70 border-slate-600 text-slate-100 hover:bg-slate-800"
+                data-testid="lightbox-download"
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Baixar
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setLightboxPhoto(null)}
+                className="bg-slate-900/70 border-slate-600 text-slate-100 hover:bg-slate-800"
+                data-testid="lightbox-close"
+              >
+                <X className="w-4 h-4 mr-2" />
+                Fechar
+              </Button>
+            </div>
+          </div>
+
+          <img
+            src={photoUrls[lightboxPhoto.id]}
+            alt={lightboxPhoto.type}
+            className="max-h-[90vh] max-w-[95vw] object-contain rounded-lg shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </Layout>
   );
 }
