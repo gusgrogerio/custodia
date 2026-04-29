@@ -208,6 +208,20 @@ class CustodyUpdate(BaseModel):
     responsible_id: Optional[str] = None
     region: Optional[str] = None
 
+class CustodyEdit(BaseModel):
+    """Full edit of custody data fields (used by PUT)."""
+    shipment_code: Optional[str] = None
+    client_name: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    region: Optional[str] = None
+    occurrence_type: Optional[str] = None
+    observation: Optional[str] = None  # replace, not append
+    volume_current: Optional[int] = None
+    volume_total: Optional[int] = None
+
 class BulkUpdateRequest(BaseModel):
     custody_ids: List[str]
     action: str  # mark_returned, update_responsible
@@ -977,6 +991,102 @@ async def update_custody(custody_id: str, data: CustodyUpdate, request: Request)
     treatment_info = calculate_days_without_treatment(updated)
     updated.update(treatment_info)
     
+    return updated
+
+@api_router.put("/custodies/{custody_id}")
+async def edit_custody(custody_id: str, data: CustodyEdit, request: Request):
+    """Full edit of a custody's data fields. RBAC: admin (any) or operator (own region only).
+    If region is being changed, the user must have permission on BOTH the old and new region.
+    """
+    user = await get_current_user(request)
+    
+    custody = await db.custodies.find_one({"id": custody_id})
+    if not custody:
+        raise HTTPException(status_code=404, detail="Custódia não encontrada.")
+    
+    # RBAC: must own the original region
+    if not can_modify_region(user, custody.get("region")):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Operadores só podem editar custódias da própria região ({user.get('region')})."
+        )
+    
+    update_data = {}
+    changes = []
+    
+    EDITABLE_TEXT_FIELDS = ["shipment_code", "client_name", "phone", "address",
+                            "city", "state", "occurrence_type", "observation"]
+    for field in EDITABLE_TEXT_FIELDS:
+        new_value = getattr(data, field)
+        if new_value is not None:
+            new_value = str(new_value).strip()
+            if new_value != (custody.get(field) or ""):
+                update_data[field] = new_value
+                changes.append(f"{field}={new_value!r}")
+    
+    if data.region is not None:
+        if data.region not in VALID_REGIONS:
+            raise HTTPException(status_code=400, detail="Região inválida.")
+        # If changing region, user must also own the new region
+        if data.region != custody.get("region") and not can_modify_region(user, data.region):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Você não tem permissão para mover esta custódia para {data.region}."
+            )
+        if data.region != custody.get("region"):
+            update_data["region"] = data.region
+            changes.append(f"region={data.region}")
+    
+    if data.volume_current is not None:
+        if data.volume_current < 1:
+            raise HTTPException(status_code=400, detail="Volume atual deve ser >= 1.")
+        if data.volume_current != custody.get("volume_current"):
+            update_data["volume_current"] = data.volume_current
+            changes.append(f"volume_current={data.volume_current}")
+    
+    if data.volume_total is not None:
+        if data.volume_total < 1:
+            raise HTTPException(status_code=400, detail="Volume total deve ser >= 1.")
+        if data.volume_total != custody.get("volume_total"):
+            update_data["volume_total"] = data.volume_total
+            changes.append(f"volume_total={data.volume_total}")
+    
+    # Cross-field check
+    final_current = update_data.get("volume_current", custody.get("volume_current", 1))
+    final_total = update_data.get("volume_total", custody.get("volume_total", 1))
+    if final_current > final_total:
+        raise HTTPException(status_code=400, detail="Volume atual não pode ser maior que o total.")
+    
+    if not update_data:
+        raise HTTPException(status_code=400, detail="Nenhuma alteração informada.")
+    
+    now = datetime.now(timezone.utc).isoformat()
+    update_data["updated_at"] = now
+    
+    history_entry = {
+        "timestamp": now,
+        "user_id": user["id"],
+        "user_name": user["name"],
+        "action": "custody_edited",
+        "details": "Edição manual: " + "; ".join(changes)
+    }
+    
+    await db.custodies.update_one(
+        {"id": custody_id},
+        {"$set": update_data, "$push": {"history": history_entry}}
+    )
+    
+    await log_audit(
+        "custody_updated",
+        user=user,
+        ip=get_client_ip(request),
+        target_id=custody_id,
+        details=f"caixa={custody.get('box_number')} | " + "; ".join(changes)
+    )
+    
+    updated = await db.custodies.find_one({"id": custody_id}, {"_id": 0})
+    treatment_info = calculate_days_without_treatment(updated)
+    updated.update(treatment_info)
     return updated
 
 # Photo Upload Endpoint

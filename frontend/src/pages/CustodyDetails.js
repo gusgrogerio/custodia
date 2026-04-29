@@ -22,7 +22,8 @@ import {
   Printer,
   RotateCcw,
   Bell,
-  Trash2
+  Trash2,
+  Pencil
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -40,7 +41,10 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
+  DialogFooter,
 } from '../components/ui/dialog';
+import { Input } from '../components/ui/input';
 import { toast } from 'sonner';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -203,6 +207,9 @@ export default function CustodyDetails() {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editForm, setEditForm] = useState(null);
   const [newObservation, setNewObservation] = useState('');
   const [photoUrls, setPhotoUrls] = useState({});
   const [showLabelDialog, setShowLabelDialog] = useState(false);
@@ -254,6 +261,55 @@ export default function CustodyDetails() {
       Object.values(photoUrls).forEach(url => URL.revokeObjectURL(url));
     };
   }, [id]);
+
+  const openEdit = () => {
+    setEditForm({
+      shipment_code: custody.shipment_code || '',
+      client_name: custody.client_name || '',
+      phone: custody.phone || '',
+      address: custody.address || '',
+      city: custody.city || '',
+      state: custody.state || '',
+      region: custody.region || 'Guarulhos',
+      occurrence_type: custody.occurrence_type || 'outro',
+      observation: custody.observation || '',
+      volume_current: custody.volume_current || 1,
+      volume_total: custody.volume_total || 1,
+    });
+    setEditOpen(true);
+  };
+
+  const handleEditSave = async (e) => {
+    e?.preventDefault();
+    if (!editForm.shipment_code || !editForm.client_name) {
+      toast.error('Código da remessa e nome do cliente são obrigatórios.');
+      return;
+    }
+    if (Number(editForm.volume_current) > Number(editForm.volume_total)) {
+      toast.error('Volume atual não pode ser maior que o total.');
+      return;
+    }
+    setEditSaving(true);
+    try {
+      const headers = getAuthHeaders();
+      const payload = {
+        ...editForm,
+        volume_current: Number(editForm.volume_current),
+        volume_total: Number(editForm.volume_total),
+      };
+      const { data } = await axios.put(`${API}/custodies/${id}`, payload, {
+        withCredentials: true,
+        headers
+      });
+      setCustody(data);
+      setEditOpen(false);
+      toast.success('Remessa atualizada com sucesso.');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Erro ao salvar alterações.');
+    } finally {
+      setEditSaving(false);
+    }
+  };
 
   const handleDelete = async () => {
     if (!custody) return;
@@ -383,6 +439,16 @@ export default function CustodyDetails() {
             Voltar
           </Button>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={openEdit}
+              className="border-blue-500/40 text-blue-400 hover:bg-blue-500/10"
+              data-testid="edit-custody-button"
+            >
+              <Pencil className="w-4 h-4 mr-2" />
+              Editar Remessa
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -684,6 +750,173 @@ export default function CustodyDetails() {
             <DialogTitle className="text-slate-50">Etiqueta da Caixa</DialogTitle>
           </DialogHeader>
           {labelData && <LabelPreview labelData={labelData} />}
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-slate-100 max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-['Chivo'] flex items-center gap-2">
+              <Pencil className="w-5 h-5 text-blue-400" />
+              Editar Remessa
+            </DialogTitle>
+            <DialogDescription className="text-slate-400">
+              Atualize os dados da custódia. Caixa, data de criação e fotos não são alteráveis aqui.
+            </DialogDescription>
+          </DialogHeader>
+          {editForm && (
+            <form onSubmit={handleEditSave} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-slate-300">Código da Remessa *</Label>
+                  <Input
+                    value={editForm.shipment_code}
+                    onChange={(e) => setEditForm({ ...editForm, shipment_code: e.target.value })}
+                    className="bg-slate-950 border-slate-700 text-slate-100"
+                    data-testid="edit-shipment-code"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label className="text-slate-300">Cliente *</Label>
+                  <Input
+                    value={editForm.client_name}
+                    onChange={(e) => setEditForm({ ...editForm, client_name: e.target.value })}
+                    className="bg-slate-950 border-slate-700 text-slate-100"
+                    data-testid="edit-client-name"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-slate-300">Telefone</Label>
+                  <Input
+                    value={editForm.phone}
+                    onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                    className="bg-slate-950 border-slate-700 text-slate-100"
+                    data-testid="edit-phone"
+                  />
+                </div>
+                <div>
+                  <Label className="text-slate-300">Tipo de Ocorrência</Label>
+                  <Select
+                    value={editForm.occurrence_type}
+                    onValueChange={(v) => setEditForm({ ...editForm, occurrence_type: v })}
+                  >
+                    <SelectTrigger className="bg-slate-950 border-slate-700 text-slate-100" data-testid="edit-occurrence">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-slate-900 border-slate-700">
+                      {Object.entries(occurrenceTypes).map(([k, v]) => (
+                        <SelectItem key={k} value={k} className="text-slate-200">{v}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-slate-300">Endereço</Label>
+                <Input
+                  value={editForm.address}
+                  onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
+                  className="bg-slate-950 border-slate-700 text-slate-100"
+                  data-testid="edit-address"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="col-span-2 sm:col-span-2">
+                  <Label className="text-slate-300">Cidade</Label>
+                  <Input
+                    value={editForm.city}
+                    onChange={(e) => setEditForm({ ...editForm, city: e.target.value })}
+                    className="bg-slate-950 border-slate-700 text-slate-100"
+                    data-testid="edit-city"
+                  />
+                </div>
+                <div>
+                  <Label className="text-slate-300">UF</Label>
+                  <Input
+                    value={editForm.state}
+                    maxLength={2}
+                    onChange={(e) => setEditForm({ ...editForm, state: e.target.value.toUpperCase() })}
+                    className="bg-slate-950 border-slate-700 text-slate-100 uppercase"
+                    data-testid="edit-state"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <Label className="text-slate-300">Região *</Label>
+                  <Select
+                    value={editForm.region}
+                    onValueChange={(v) => setEditForm({ ...editForm, region: v })}
+                  >
+                    <SelectTrigger className="bg-slate-950 border-slate-700 text-slate-100" data-testid="edit-region">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-slate-900 border-slate-700">
+                      <SelectItem value="Guarulhos" className="text-slate-200">Guarulhos</SelectItem>
+                      <SelectItem value="São Paulo" className="text-slate-200">São Paulo</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-slate-300">Volume Atual</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={editForm.volume_current}
+                    onChange={(e) => setEditForm({ ...editForm, volume_current: e.target.value })}
+                    className="bg-slate-950 border-slate-700 text-slate-100"
+                    data-testid="edit-volume-current"
+                  />
+                </div>
+                <div>
+                  <Label className="text-slate-300">Volume Total</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={editForm.volume_total}
+                    onChange={(e) => setEditForm({ ...editForm, volume_total: e.target.value })}
+                    className="bg-slate-950 border-slate-700 text-slate-100"
+                    data-testid="edit-volume-total"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-slate-300">Observação</Label>
+                <Textarea
+                  value={editForm.observation}
+                  onChange={(e) => setEditForm({ ...editForm, observation: e.target.value })}
+                  rows={3}
+                  className="bg-slate-950 border-slate-700 text-slate-100"
+                  data-testid="edit-observation"
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Esta edição substitui o texto. Para registrar uma nova tratativa sem perder o histórico,
+                  use a seção "Adicionar Observação" da página.
+                </p>
+              </div>
+
+              <DialogFooter className="pt-2">
+                <Button type="button" variant="outline" onClick={() => setEditOpen(false)}
+                  className="border-slate-700 text-slate-300 hover:bg-slate-800">
+                  Cancelar
+                </Button>
+                <Button type="submit" disabled={editSaving} className="bg-blue-600 hover:bg-blue-500"
+                  data-testid="edit-custody-submit">
+                  {editSaving ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Salvando...</> : 'Salvar Alterações'}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
     </Layout>
