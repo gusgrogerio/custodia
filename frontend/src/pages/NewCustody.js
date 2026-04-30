@@ -5,7 +5,9 @@ import { useAuth } from '../context/AuthContext';
 import Layout from '../components/Layout';
 import { 
   Package, 
-  Camera, 
+  Camera,
+  ScanLine,
+  AlertCircle,
   Upload, 
   X, 
   Loader2,
@@ -24,19 +26,12 @@ import {
   SelectValue,
 } from '../components/ui/select';
 import { toast } from 'sonner';
+import { OCCURRENCE_TYPES, isAutoReturnOccurrence } from '../constants/occurrences';
+import BarcodeScanner from '../components/BarcodeScanner';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
-const occurrenceTypes = [
-  { value: 'desconhecido_no_local', label: 'Desconhecido no local' },
-  { value: 'numero_nao_localizado', label: 'Número não localizado' },
-  { value: 'endereco_nao_localizado', label: 'Endereço não localizado' },
-  { value: 'mudou_se', label: 'Mudou-se' },
-  { value: 'cliente_ausente', label: 'Cliente ausente' },
-  { value: 'recusado', label: 'Recusado' },
-  { value: 'entrega_reagendada', label: 'Entrega reagendada' },
-  { value: 'outro', label: 'Outro' },
-];
+const occurrenceTypes = Object.entries(OCCURRENCE_TYPES).map(([value, label]) => ({ value, label }));
 
 function PhotoUpload({ label, photoType, photo, setPhoto, onUpload, uploading }) {
   const inputRef = useRef(null);
@@ -138,6 +133,14 @@ export default function NewCustody() {
     adicional: null,
   });
 
+  const [scannerOpen, setScannerOpen] = useState(false);
+
+  const handleScanResult = (text) => {
+    setFormData(prev => ({ ...prev, shipment_code: text }));
+    setScannerOpen(false);
+    toast.success(`Código lido: ${text}`);
+  };
+
   const handleChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
@@ -232,15 +235,27 @@ export default function NewCustody() {
                 <Label htmlFor="shipment_code" className="text-slate-300">
                   Código da Remessa <span className="text-red-400">*</span>
                 </Label>
-                <Input
-                  id="shipment_code"
-                  placeholder="Ex: REM123456"
-                  value={formData.shipment_code}
-                  onChange={(e) => handleChange('shipment_code', e.target.value)}
-                  className="bg-slate-950 border-slate-700 text-slate-100 placeholder:text-slate-600 focus:border-blue-500"
-                  data-testid="shipment-code-input"
-                  required
-                />
+                <div className="flex gap-2">
+                  <Input
+                    id="shipment_code"
+                    placeholder="Digite ou escaneie o código"
+                    value={formData.shipment_code}
+                    onChange={(e) => handleChange('shipment_code', e.target.value)}
+                    className="flex-1 bg-slate-950 border-slate-700 text-slate-100 placeholder:text-slate-600 focus:border-blue-500"
+                    data-testid="shipment-code-input"
+                    required
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setScannerOpen(true)}
+                    className="shrink-0 border-blue-500/40 text-blue-400 hover:bg-blue-500/10"
+                    data-testid="scan-barcode-button"
+                    title="Escanear código de barras"
+                  >
+                    <ScanLine className="w-4 h-4" />
+                  </Button>
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -324,6 +339,15 @@ export default function NewCustody() {
                   ))}
                 </SelectContent>
               </Select>
+              {isAutoReturnOccurrence(formData.occurrence_type) && (
+                <div className="mt-2 flex items-start gap-2 bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm text-red-300" data-testid="auto-return-alert">
+                  <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <span>
+                    Esta ocorrência marca a remessa automaticamente como
+                    <strong className="ml-1">"Apta para devolução"</strong> ao salvar.
+                  </span>
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -471,6 +495,12 @@ export default function NewCustody() {
           </div>
         </form>
       </div>
+
+      <BarcodeScanner
+        open={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onResult={handleScanResult}
+      />
     </Layout>
   );
 }

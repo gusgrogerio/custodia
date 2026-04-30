@@ -59,6 +59,7 @@ import { Calendar } from '../components/ui/calendar';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'sonner';
+import { OCCURRENCE_TYPES, isAutoReturnOccurrence } from '../constants/occurrences';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -70,16 +71,7 @@ const statusMap = {
   returned: { label: 'Devolvida', class: 'bg-purple-500/20 text-purple-400 border border-purple-500/30', icon: Package },
 };
 
-const occurrenceTypes = {
-  'desconhecido_no_local': 'Desconhecido no local',
-  'numero_nao_localizado': 'Número não localizado',
-  'endereco_nao_localizado': 'Endereço não localizado',
-  'mudou_se': 'Mudou-se',
-  'cliente_ausente': 'Cliente ausente',
-  'recusado': 'Recusado',
-  'entrega_reagendada': 'Entrega reagendada',
-  'outro': 'Outro',
-};
+const occurrenceTypes = OCCURRENCE_TYPES;
 
 function MetricCard({ title, value, icon: Icon, color, onClick, active }) {
   return (
@@ -366,7 +358,7 @@ export default function CentralCustodias() {
   };
 
   const generateCSV = (data) => {
-    const headers = ['Nº Caixa', 'Código', 'Cliente', 'Telefone', 'Cidade', 'Estado', 'Região', 'Ocorrência', 'Status', 'Dias s/ Tratativa', 'Responsável'];
+    const headers = ['Nº Caixa', 'Código', 'Cliente', 'Telefone', 'Cidade', 'Estado', 'Região', 'Ocorrência', 'Status', 'Dias c/ Tratativa', 'Responsável'];
     const rows = data.map(c => [
       c.box_number || '',
       c.shipment_code,
@@ -638,7 +630,7 @@ export default function CentralCustodias() {
                   </SelectTrigger>
                   <SelectContent className="bg-slate-900 border-slate-700 z-50">
                     <SelectItem value="created_at" className="text-slate-200">Data criação</SelectItem>
-                    <SelectItem value="days_without_treatment" className="text-slate-200">Dias sem tratativa</SelectItem>
+                    <SelectItem value="days_without_treatment" className="text-slate-200">Dias com tratativa</SelectItem>
                     <SelectItem value="updated_at" className="text-slate-200">Última atualização</SelectItem>
                   </SelectContent>
                 </Select>
@@ -806,7 +798,7 @@ export default function CentralCustodias() {
                     <TableHead className="text-slate-400 font-semibold">Cidade/UF</TableHead>
                     <TableHead className="text-slate-400 font-semibold">Ocorrência</TableHead>
                     <TableHead className="text-slate-400 font-semibold">Status</TableHead>
-                    <TableHead className="text-slate-400 font-semibold">Dias s/ Trat.</TableHead>
+                    <TableHead className="text-slate-400 font-semibold">Dias c/ Trat.</TableHead>
                     <TableHead className="text-slate-400 font-semibold">Atualização</TableHead>
                     <TableHead className="text-slate-400 font-semibold">Responsável</TableHead>
                     <TableHead className="text-slate-400 font-semibold text-right">Ação</TableHead>

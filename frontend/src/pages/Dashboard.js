@@ -9,6 +9,7 @@ import {
   Clock, 
   CheckCircle2, 
   AlertTriangle,
+  CheckCheck,
   Eye,
   RefreshCw,
   Download,
@@ -27,6 +28,7 @@ import {
   TableHeader,
   TableRow,
 } from '../components/ui/table';
+import { OCCURRENCE_TYPES } from '../constants/occurrences';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -37,16 +39,7 @@ const statusMap = {
   ready_for_return: { label: 'Apta Devolução', class: 'bg-red-500/20 text-red-400 border border-red-500/30', icon: RotateCcw },
 };
 
-const occurrenceTypes = {
-  'desconhecido_no_local': 'Desconhecido no local',
-  'numero_nao_localizado': 'Número não localizado',
-  'endereco_nao_localizado': 'Endereço não localizado',
-  'mudou_se': 'Mudou-se',
-  'cliente_ausente': 'Cliente ausente',
-  'recusado': 'Recusado',
-  'entrega_reagendada': 'Entrega reagendada',
-  'outro': 'Outro',
-};
+const occurrenceTypes = OCCURRENCE_TYPES;
 
 function MetricCard({ title, value, icon: Icon, color, subtext, onClick, active }) {
   return (
@@ -99,7 +92,7 @@ function AlertBanner({ alerts, onDismiss }) {
               <span className={`text-sm font-semibold ${
                 alert.type === 'return' ? 'text-red-400' : 'text-amber-400'
               }`}>
-                {alert.type === 'return' ? 'Custódia sem retorno há 10 dias' : 'Alerta Preventivo'}
+                {alert.type === 'return' ? 'Apta para devolução' : 'Alerta Preventivo'}
               </span>
               <Badge className="bg-slate-800 text-slate-300 text-xs">
                 {alert.box_number}
@@ -108,7 +101,7 @@ function AlertBanner({ alerts, onDismiss }) {
             <p className="text-sm text-slate-300">{alert.message}</p>
             <div className="flex items-center gap-4 mt-2">
               <span className="text-xs text-slate-500">
-                {alert.days_without_treatment} dias sem tratativa
+                {alert.days_without_treatment} dias com tratativa
               </span>
               {alert.days_until_return > 0 && (
                 <span className="text-xs text-amber-400">
@@ -135,7 +128,7 @@ function AlertBanner({ alerts, onDismiss }) {
 export default function Dashboard() {
   const { getAuthHeaders } = useAuth();
   const { activeRegion } = useRegion();
-  const [stats, setStats] = useState({ total_today: 0, pending: 0, resolved: 0, expired: 0, near_return: 0, ready_for_return: 0 });
+  const [stats, setStats] = useState({ total_today: 0, pending: 0, resolved: 0, treated: 0, near_return: 0, ready_for_return: 0 });
   const [custodies, setCustodies] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -347,11 +340,11 @@ export default function Dashboard() {
             active={filter === 'resolved'}
           />
           <MetricCard 
-            title="Vencidos" 
-            value={stats.expired} 
-            icon={AlertTriangle} 
-            color="text-orange-500"
-            subtext="> 24 horas"
+            title="Tratados" 
+            value={stats.treated ?? 0} 
+            icon={CheckCheck} 
+            color="text-emerald-400"
+            subtext="≥ 1 dia útil com tratativa"
           />
           <MetricCard 
             title="Perto Devolução" 
@@ -411,7 +404,7 @@ export default function Dashboard() {
                     <TableHead className="text-slate-400 font-semibold">Cliente</TableHead>
                     <TableHead className="text-slate-400 font-semibold hidden sm:table-cell">Volume</TableHead>
                     <TableHead className="text-slate-400 font-semibold">Status</TableHead>
-                    <TableHead className="text-slate-400 font-semibold hidden md:table-cell">Dias s/ Trat.</TableHead>
+                    <TableHead className="text-slate-400 font-semibold hidden md:table-cell">Dias c/ Trat.</TableHead>
                     <TableHead className="text-slate-400 font-semibold hidden lg:table-cell">Responsável</TableHead>
                     <TableHead className="text-slate-400 font-semibold text-right">Ação</TableHead>
                   </TableRow>

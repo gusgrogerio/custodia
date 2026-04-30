@@ -50,6 +50,7 @@ import {
 import { Input } from '../components/ui/input';
 import { toast } from 'sonner';
 import { QRCodeSVG } from 'qrcode.react';
+import { OCCURRENCE_TYPES } from '../constants/occurrences';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -60,16 +61,7 @@ const statusMap = {
   ready_for_return: { label: 'Apta Devolução', class: 'bg-red-500/20 text-red-400 border border-red-500/30', icon: RotateCcw },
 };
 
-const occurrenceTypes = {
-  'desconhecido_no_local': 'Desconhecido no local',
-  'numero_nao_localizado': 'Número não localizado',
-  'endereco_nao_localizado': 'Endereço não localizado',
-  'mudou_se': 'Mudou-se',
-  'cliente_ausente': 'Cliente ausente',
-  'recusado': 'Recusado',
-  'entrega_reagendada': 'Entrega reagendada',
-  'outro': 'Outro',
-};
+const occurrenceTypes = OCCURRENCE_TYPES;
 
 // Label component for printing
 function LabelPreview({ labelData, onPrint }) {
@@ -376,6 +368,20 @@ export default function CustodyDetails() {
     }
   };
 
+  const handleRegisterTreatment = async () => {
+    setUpdating(true);
+    try {
+      const headers = getAuthHeaders();
+      await axios.post(`${API}/custodies/${id}/treatments`, {}, { withCredentials: true, headers });
+      await fetchCustody();
+      toast.success('Tratativa registrada hoje!');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Erro ao registrar tratativa.');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
   const handleAddObservation = async () => {
     if (!newObservation.trim()) return;
     
@@ -522,8 +528,8 @@ export default function CustodyDetails() {
                 custody.is_ready_for_return ? 'text-red-400' : 'text-amber-400'
               }`}>
                 {custody.is_ready_for_return 
-                  ? 'Custódia sem retorno há 10+ dias - Apta para devolução' 
-                  : `Alerta: ${custody.days_without_treatment} dias sem tratativa`}
+                  ? 'Apta para devolução (10+ dias com tratativa ou ocorrência automática)' 
+                  : `Alerta: ${custody.days_without_treatment} dias com tratativa`}
               </span>
               {custody.days_until_return > 0 && (
                 <p className="text-sm text-slate-400 mt-1">
@@ -622,7 +628,7 @@ export default function CustodyDetails() {
             <div className="flex items-start gap-3">
               <Clock className="w-4 h-4 text-slate-500 mt-0.5" />
               <div>
-                <p className="text-xs text-slate-500 uppercase tracking-wider">Dias sem Tratativa</p>
+                <p className="text-xs text-slate-500 uppercase tracking-wider">Dias com Tratativa</p>
                 <p className={`font-semibold ${
                   custody.days_without_treatment >= 10 
                     ? 'text-red-400' 
@@ -742,6 +748,26 @@ export default function CustodyDetails() {
                   <SelectItem value="ready_for_return" className="text-slate-200">Apta para Devolução</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-slate-400">Registrar Tratativa</Label>
+              <Button
+                onClick={handleRegisterTreatment}
+                disabled={updating || custody.status === 'resolved' || custody.status === 'returned'}
+                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white"
+                data-testid="register-treatment-button"
+                title="Registra uma tentativa de tratativa hoje (1 dia útil)"
+              >
+                {updating ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4 mr-2" />
+                )}
+                Já tratei hoje
+              </Button>
+              <p className="text-xs text-slate-500">
+                Cada clique conta 1 dia útil. Múltiplos cliques no mesmo dia contam como 1.
+              </p>
             </div>
           </div>
 

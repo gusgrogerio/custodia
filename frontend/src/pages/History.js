@@ -45,6 +45,7 @@ import {
 import { Calendar } from '../components/ui/calendar';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { OCCURRENCE_TYPES } from '../constants/occurrences';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -55,16 +56,7 @@ const statusMap = {
   ready_for_return: { label: 'Apta Devolução', class: 'bg-red-500/20 text-red-400 border border-red-500/30', icon: RotateCcw },
 };
 
-const occurrenceTypes = {
-  'desconhecido_no_local': 'Desconhecido no local',
-  'numero_nao_localizado': 'Número não localizado',
-  'endereco_nao_localizado': 'Endereço não localizado',
-  'mudou_se': 'Mudou-se',
-  'cliente_ausente': 'Cliente ausente',
-  'recusado': 'Recusado',
-  'entrega_reagendada': 'Entrega reagendada',
-  'outro': 'Outro',
-};
+const occurrenceTypes = OCCURRENCE_TYPES;
 
 export default function History() {
   const { getAuthHeaders } = useAuth();
