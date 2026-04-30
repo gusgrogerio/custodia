@@ -735,7 +735,7 @@ export default function CustodyDetails() {
             <div className="space-y-2">
               <Label className="text-slate-400">Alterar Status</Label>
               <Select 
-                value={custody.status} 
+                value={getStatus(custody)} 
                 onValueChange={handleStatusChange}
                 disabled={updating}
               >
@@ -747,10 +747,21 @@ export default function CustodyDetails() {
                 </SelectTrigger>
                 <SelectContent className="bg-slate-900 border-slate-700">
                   <SelectItem value="pending" className="text-slate-200">Pendente</SelectItem>
+                  {custody.is_treated_today && (
+                    <SelectItem value="treated_today" className="text-emerald-300" disabled>
+                      Tratado Hoje (automático)
+                    </SelectItem>
+                  )}
                   <SelectItem value="resolved" className="text-slate-200">Resolvido</SelectItem>
                   <SelectItem value="ready_for_return" className="text-slate-200">Apta para Devolução</SelectItem>
                 </SelectContent>
               </Select>
+              {custody.is_treated_today && (
+                <p className="text-xs text-emerald-400 flex items-center gap-1.5">
+                  <CheckCheck className="w-3.5 h-3.5" />
+                  Tratado hoje · status volta para "Pendente" às 00:00 BRT
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label className="text-slate-400">Registrar Tratativa</Label>
