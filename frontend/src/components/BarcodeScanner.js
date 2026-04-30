@@ -1,17 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Html5Qrcode } from 'html5-qrcode';
+import { Html5Qrcode, Html5QrcodeScannerState } from 'html5-qrcode';
 import { Button } from './ui/button';
 import { X, Camera, Check } from 'lucide-react';
 
 /**
  * Barcode/QR scanner overlay using html5-qrcode.
- * Calls onResult(text) when a code is detected (auto-stops camera).
- * Works on mobile and desktop (uses environment-facing camera when possible).
+ * Defensive against the common "Cannot stop, scanner is not running or paused"
+ * error by checking the scanner state before calling stop().
  */
 export default function BarcodeScanner({ open, onClose, onResult }) {
   const containerId = 'barcode-scanner-region';
   const scannerRef = useRef(null);
-  // Latest callback held in a ref so re-renders of the parent don't restart the camera.
   const onResultRef = useRef(onResult);
   useEffect(() => { onResultRef.current = onResult; }, [onResult]);
 
@@ -19,24 +18,46 @@ export default function BarcodeScanner({ open, onClose, onResult }) {
   const [success, setSuccess] = useState('');
   const [starting, setStarting] = useState(false);
 
+  // Safe stop helper — never throws.
+  const safeStopScanner = async (scanner) => {
+    if (!scanner) return;
+    try {
+      const state = typeof scanner.getState === 'function' ? scanner.getState() : null;
+      if (state === Html5QrcodeScannerState.SCANNING || state === Html5QrcodeScannerState.PAUSED) {
+        await scanner.stop();
+      }
+    } catch (e) {
+      // ignore "not running" or transition errors
+    }
+    try { scanner.clear(); } catch (e) { /* ignore */ }
+  };
+
   useEffect(() => {
     if (!open) return undefined;
 
     let cancelled = false;
     let detected = false;
+    let localScanner = null;
 
     const start = async () => {
       setError('');
       setSuccess('');
       setStarting(true);
 
-      // Wait one frame so the container is mounted with non-zero size
+      // Wait one frame so the container exists & has size
       await new Promise((r) => requestAnimationFrame(() => r()));
       if (cancelled) return;
 
+      const containerEl = document.getElementById(containerId);
+      if (!containerEl) {
+        setError('Falha ao montar o scanner. Tente novamente.');
+        setStarting(false);
+        return;
+      }
+
       try {
-        const scanner = new Html5Qrcode(containerId, { verbose: false });
-        scannerRef.current = scanner;
+        localScanner = new Html5Qrcode(containerId, { verbose: false });
+        scannerRef.current = localScanner;
 
         const config = {
           fps: 10,
@@ -44,43 +65,44 @@ export default function BarcodeScanner({ open, onClose, onResult }) {
           aspectRatio: 1.6,
         };
 
-        // Try environment-facing first; fall back to default camera if it fails.
-        const onDetected = (decodedText) => {
+        const onDetected = async (decodedText) => {
           if (detected || cancelled) return;
           detected = true;
           setSuccess(decodedText);
-          // Stop the camera, then notify parent.
-          scanner.stop()
-            .catch(() => {})
-            .finally(() => {
-              try { scanner.clear(); } catch (e) { /* ignore */ }
-              setTimeout(() => {
-                if (!cancelled) onResultRef.current?.(decodedText);
-              }, 250);
-            });
+          await safeStopScanner(localScanner);
+          if (!cancelled) {
+            setTimeout(() => {
+              if (!cancelled) onResultRef.current?.(decodedText);
+            }, 250);
+          }
         };
 
         try {
-          await scanner.start({ facingMode: 'environment' }, config, onDetected, () => {});
+          await localScanner.start({ facingMode: 'environment' }, config, onDetected, () => {});
         } catch (envErr) {
-          // Some desktops have no environment camera — try first available.
-          const cams = await Html5Qrcode.getCameras().catch(() => []);
+          // Some devices have no environment camera — try first available
+          let cams = [];
+          try { cams = await Html5Qrcode.getCameras(); } catch (e) { /* ignore */ }
           if (cams && cams.length > 0) {
-            await scanner.start(cams[0].id, config, onDetected, () => {});
+            await localScanner.start(cams[0].id, config, onDetected, () => {});
           } else {
             throw envErr;
           }
         }
+
+        if (cancelled) {
+          // Component unmounted while we were starting — stop immediately
+          await safeStopScanner(localScanner);
+        }
       } catch (e) {
         const msg = e?.message || String(e);
         if (msg.includes('NotAllowed') || msg.includes('Permission')) {
-          setError('Permissão de câmera negada. Habilite no navegador.');
+          setError('Permissão de câmera negada. Habilite no navegador e tente novamente.');
         } else if (msg.includes('NotFound') || msg.includes('NotReadable')) {
           setError('Nenhuma câmera disponível ou em uso por outro app.');
         } else {
-          setError(`Não foi possível abrir a câmera: ${msg}`);
+          setError(`Erro ao iniciar a câmera: ${msg}`);
         }
-        // Surface to console for debugging
         // eslint-disable-next-line no-console
         console.error('[BarcodeScanner] start failed:', e);
       } finally {
@@ -92,18 +114,14 @@ export default function BarcodeScanner({ open, onClose, onResult }) {
 
     return () => {
       cancelled = true;
-      const s = scannerRef.current;
+      const s = scannerRef.current || localScanner;
       scannerRef.current = null;
-      if (s) {
-        s.stop()
-          .catch(() => {})
-          .finally(() => { try { s.clear(); } catch (e) { /* ignore */ } });
-      }
+      // Defer slightly to let any in-flight start() reach a stoppable state
+      setTimeout(() => { safeStopScanner(s); }, 50);
     };
-    // IMPORTANT: only depend on `open`, not on `onResult` (kept in ref above).
   }, [open]);
 
-  // ESC key closes the overlay
+  // ESC closes overlay
   useEffect(() => {
     if (!open) return undefined;
     const handler = (e) => { if (e.key === 'Escape') onClose?.(); };
@@ -115,7 +133,7 @@ export default function BarcodeScanner({ open, onClose, onResult }) {
 
   return (
     <div
-      className="fixed inset-0 z-[110] bg-black/95 flex flex-col items-center justify-center p-4 animate-fadeIn"
+      className="fixed inset-0 z-[110] bg-black/95 flex flex-col items-center justify-center p-4"
       data-testid="barcode-scanner"
     >
       <div className="absolute top-0 left-0 right-0 px-4 py-3 flex items-center justify-between bg-gradient-to-b from-black/80 to-transparent z-10">
