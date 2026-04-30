@@ -7,7 +7,8 @@ import Layout from '../components/Layout';
 import { 
   Package, 
   Clock, 
-  CheckCircle2, 
+  CheckCircle2,
+  CheckCheck, 
   AlertTriangle,
   Eye,
   RefreshCw,
@@ -207,7 +208,7 @@ export default function CentralCustodias() {
   const { getAuthHeaders } = useAuth();
   const { activeRegion } = useRegion();
   const [custodies, setCustodies] = useState([]);
-  const [stats, setStats] = useState({ total: 0, awaiting_return: 0, near_return: 0, ready_for_return: 0, finalized: 0, no_photos: 0 });
+  const [stats, setStats] = useState({ total: 0, treated_today: 0, awaiting_return: 0, near_return: 0, ready_for_return: 0, finalized: 0, no_photos: 0 });
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
@@ -223,6 +224,8 @@ export default function CentralCustodias() {
     responsible_id: '',
     date_from: null,
     date_to: null,
+    awaiting_return: false,
+    treated_today: false,
     near_return: false,
     ready_for_return: false,
     no_photos: false,
@@ -258,6 +261,8 @@ export default function CentralCustodias() {
       if (filters.date_to) params.append('date_to', filters.date_to.toISOString());
       if (filters.near_return) params.append('near_return', 'true');
       if (filters.ready_for_return) params.append('ready_for_return', 'true');
+      if (filters.awaiting_return) params.append('awaiting_return', 'true');
+      if (filters.treated_today) params.append('treated_today', 'true');
       if (filters.no_photos) params.append('no_photos', 'true');
       if (filters.no_treatment) params.append('no_treatment', 'true');
       if (filters.sort_by) params.append('sort_by', filters.sort_by);
@@ -407,6 +412,8 @@ export default function CentralCustodias() {
       responsible_id: '',
       date_from: null,
       date_to: null,
+      awaiting_return: false,
+      treated_today: false,
       near_return: false,
       ready_for_return: false,
       no_photos: false,
@@ -533,15 +540,23 @@ export default function CentralCustodias() {
             value={stats.awaiting_return} 
             icon={Clock} 
             color="text-slate-400"
-            onClick={() => setFilters(prev => ({ ...prev, status: 'pending', near_return: false, ready_for_return: false }))}
-            active={filters.status === 'pending' && !filters.near_return && !filters.ready_for_return}
+            onClick={() => setFilters(prev => ({ ...prev, awaiting_return: true, treated_today: false, near_return: false, ready_for_return: false, status: '' }))}
+            active={filters.awaiting_return}
+          />
+          <MetricCard 
+            title="Tratados Hoje" 
+            value={stats.treated_today ?? 0} 
+            icon={CheckCheck} 
+            color="text-emerald-400"
+            onClick={() => setFilters(prev => ({ ...prev, treated_today: true, awaiting_return: false, near_return: false, ready_for_return: false, status: '' }))}
+            active={filters.treated_today}
           />
           <MetricCard 
             title="Próx. Devolução" 
             value={stats.near_return} 
             icon={AlertTriangle} 
             color="text-amber-400"
-            onClick={() => setFilters(prev => ({ ...prev, near_return: true, ready_for_return: false, status: '' }))}
+            onClick={() => setFilters(prev => ({ ...prev, near_return: true, awaiting_return: false, treated_today: false, ready_for_return: false, status: '' }))}
             active={filters.near_return}
           />
           <MetricCard 
@@ -549,7 +564,7 @@ export default function CentralCustodias() {
             value={stats.ready_for_return} 
             icon={RotateCcw} 
             color="text-red-500"
-            onClick={() => setFilters(prev => ({ ...prev, ready_for_return: true, near_return: false, status: '' }))}
+            onClick={() => setFilters(prev => ({ ...prev, ready_for_return: true, awaiting_return: false, treated_today: false, near_return: false, status: '' }))}
             active={filters.ready_for_return}
           />
           <MetricCard 
@@ -557,7 +572,7 @@ export default function CentralCustodias() {
             value={stats.finalized} 
             icon={CheckCircle2} 
             color="text-emerald-500"
-            onClick={() => setFilters(prev => ({ ...prev, status: 'resolved', near_return: false, ready_for_return: false }))}
+            onClick={() => setFilters(prev => ({ ...prev, status: 'resolved', awaiting_return: false, treated_today: false, near_return: false, ready_for_return: false }))}
             active={filters.status === 'resolved'}
           />
         </div>

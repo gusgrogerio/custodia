@@ -597,6 +597,8 @@ async def list_custodies(
     expired: Optional[bool] = None,
     near_return: Optional[bool] = None,
     ready_for_return: Optional[bool] = None,
+    awaiting_return: Optional[bool] = None,
+    treated_today: Optional[bool] = None,
     no_photos: Optional[bool] = None,
     no_treatment: Optional[bool] = None,
     search_code: Optional[str] = None,
@@ -659,6 +661,34 @@ async def list_custodies(
     if near_return:
         query["status"] = {"$nin": ["resolved", "ready_for_return", "returned"]}
         query["treatment_days"] = {"$gte": NEAR_RETURN_THRESHOLD, "$lt": TREATMENT_DAYS_THRESHOLD}
+        # exclude auto-return occurrences and those treated today
+        today_start_near = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        query["occurrence_type"] = {"$nin": list(AUTO_RETURN_OCCURRENCES)}
+        query["$or"] = [
+            {"last_treated_at": {"$exists": False}},
+            {"last_treated_at": {"$lt": today_start_near}}
+        ]
+    
+    # Filter for treated today: custodies marked as "Já tratei" today
+    if treated_today:
+        today_start_t = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        query["last_treated_at"] = {"$gte": today_start_t}
+    
+    # Filter for awaiting_return: pending, <8 treatment days, not auto-occurrence, NOT treated today
+    if awaiting_return:
+        today_start_a = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        query["status"] = "pending"
+        query["treatment_days"] = {"$lt": NEAR_RETURN_THRESHOLD}
+        query["occurrence_type"] = {"$nin": list(AUTO_RETURN_OCCURRENCES)}
+        # Keep any existing $or (from search_query) intact by using $and fallback
+        awaiting_or = [
+            {"last_treated_at": {"$exists": False}},
+            {"last_treated_at": {"$lt": today_start_a}}
+        ]
+        if "$or" in query:
+            query.setdefault("$and", []).append({"$or": awaiting_or})
+        else:
+            query["$or"] = awaiting_or
     
     # Filter for ready for return: status=ready_for_return OR treatment_days>=10 OR auto-occurrence
     if ready_for_return:
@@ -694,23 +724,38 @@ async def get_central_stats(request: Request, region: Optional[str] = None):
     
     region_filter = {"region": region} if region else {}
     auto_occ_list = list(AUTO_RETURN_OCCURRENCES)
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
     
     total = await db.custodies.count_documents(region_filter)
     
-    # Aguardando retorno (pending, < 8 dias com tratativa, sem ocorrência auto-return)
+    # Tratados hoje: remessas com tratativa registrada hoje
+    treated_today = await db.custodies.count_documents({
+        **region_filter,
+        "last_treated_at": {"$gte": today_start}
+    })
+    
+    # Aguardando retorno (pending, < 8 dias com tratativa, sem ocorrência auto-return, NÃO tratado hoje)
     awaiting_return = await db.custodies.count_documents({
         **region_filter,
         "status": "pending",
         "treatment_days": {"$lt": NEAR_RETURN_THRESHOLD},
-        "occurrence_type": {"$nin": auto_occ_list}
+        "occurrence_type": {"$nin": auto_occ_list},
+        "$or": [
+            {"last_treated_at": {"$exists": False}},
+            {"last_treated_at": {"$lt": today_start}}
+        ]
     })
     
-    # Próximas da devolução (8-9 dias com tratativa)
+    # Próximas da devolução (8-9 dias com tratativa, não tratada hoje)
     near_return = await db.custodies.count_documents({
         **region_filter,
         "status": {"$nin": ["resolved", "ready_for_return", "returned"]},
         "treatment_days": {"$gte": NEAR_RETURN_THRESHOLD, "$lt": TREATMENT_DAYS_THRESHOLD},
-        "occurrence_type": {"$nin": auto_occ_list}
+        "occurrence_type": {"$nin": auto_occ_list},
+        "$or": [
+            {"last_treated_at": {"$exists": False}},
+            {"last_treated_at": {"$lt": today_start}}
+        ]
     })
     
     # Aptas para devolução: status=ready_for_return OU 10+ dias OU ocorrência auto-return
@@ -738,6 +783,7 @@ async def get_central_stats(request: Request, region: Optional[str] = None):
     return {
         "region": region,
         "total": total,
+        "treated_today": treated_today,
         "awaiting_return": awaiting_return,
         "near_return": near_return,
         "ready_for_return": ready_for_return,
@@ -1115,7 +1161,11 @@ async def register_treatment(custody_id: str, request: Request):
     await db.custodies.update_one(
         {"id": custody_id},
         {
-            "$set": {"last_treatment_at": now, "updated_at": now},
+            "$set": {
+                "last_treatment_at": now,
+                "last_treated_at": now,   # for "Tratados Hoje" filter
+                "updated_at": now
+            },
             "$push": {"history": history_entry}
         }
     )
