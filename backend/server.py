@@ -16,6 +16,12 @@ import jwt
 import secrets
 import requests
 from datetime import datetime, timezone, timedelta
+try:
+    from zoneinfo import ZoneInfo  # Python 3.9+
+    BR_TZ = ZoneInfo("America/Sao_Paulo")
+except Exception:
+    # Fallback: fixed UTC-3 (Brasil não tem horário de verão desde 2019)
+    BR_TZ = timezone(timedelta(hours=-3))
 from io import BytesIO
 import csv
 
@@ -322,6 +328,16 @@ TREATMENT_DAYS_THRESHOLD = 10  # business days
 NEAR_RETURN_THRESHOLD = 8       # business days
 
 
+def today_start_br_iso() -> str:
+    """ISO-8601 timestamp for the start of TODAY in Brasília time, expressed in UTC.
+    Used to compare against `last_treated_at` (stored as UTC ISO).
+    Resets at 00:00 BRT (= 03:00 UTC).
+    """
+    now_br = datetime.now(BR_TZ)
+    start_br = now_br.replace(hour=0, minute=0, second=0, microsecond=0)
+    return start_br.astimezone(timezone.utc).isoformat()
+
+
 def count_business_treatment_days(custody: dict) -> int:
     """Count distinct WEEKDAYS (Mon-Fri) where a real user registered a treatment.
     A 'treatment' is any history entry from a real user (not 'system')
@@ -357,6 +373,11 @@ def calculate_treatment_state(custody: dict) -> dict:
     occurrence = custody.get("occurrence_type")
     status = custody.get("status")
     
+    # Treated today (Brasília tz) — derived flag
+    today_start = today_start_br_iso()
+    last_treated = custody.get("last_treated_at")
+    is_treated_today = bool(last_treated and last_treated >= today_start)
+    
     auto_by_occurrence = occurrence in AUTO_RETURN_OCCURRENCES
     is_ready_for_return = (
         status == "ready_for_return"
@@ -369,15 +390,21 @@ def calculate_treatment_state(custody: dict) -> dict:
         and NEAR_RETURN_THRESHOLD <= treatment_days < TREATMENT_DAYS_THRESHOLD
     )
     
+    # Effective status for UI: "treated_today" overrides "pending" when last_treated_at >= today
+    effective_status = status
+    if is_treated_today and status == "pending":
+        effective_status = "treated_today"
+    
     return {
         "treatment_days": treatment_days,
-        "days_with_treatment": treatment_days,  # explicit alias for UI
+        "days_with_treatment": treatment_days,
         "days_until_return": max(0, TREATMENT_DAYS_THRESHOLD - treatment_days),
         "is_near_return": is_near_return,
         "is_ready_for_return": is_ready_for_return,
+        "is_treated_today": is_treated_today,
+        "effective_status": effective_status,
         "auto_return_by_occurrence": auto_by_occurrence,
         "alert_type": "return" if is_ready_for_return else ("warning" if is_near_return else None),
-        # legacy alias kept so old callers don't break:
         "days_without_treatment": treatment_days,
     }
 
@@ -662,7 +689,7 @@ async def list_custodies(
         query["status"] = {"$nin": ["resolved", "ready_for_return", "returned"]}
         query["treatment_days"] = {"$gte": NEAR_RETURN_THRESHOLD, "$lt": TREATMENT_DAYS_THRESHOLD}
         # exclude auto-return occurrences and those treated today
-        today_start_near = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        today_start_near = today_start_br_iso()
         query["occurrence_type"] = {"$nin": list(AUTO_RETURN_OCCURRENCES)}
         query["$or"] = [
             {"last_treated_at": {"$exists": False}},
@@ -671,12 +698,12 @@ async def list_custodies(
     
     # Filter for treated today: custodies marked as "Já tratei" today
     if treated_today:
-        today_start_t = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        today_start_t = today_start_br_iso()
         query["last_treated_at"] = {"$gte": today_start_t}
     
     # Filter for awaiting_return: pending, <8 treatment days, not auto-occurrence, NOT treated today
     if awaiting_return:
-        today_start_a = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        today_start_a = today_start_br_iso()
         query["status"] = "pending"
         query["treatment_days"] = {"$lt": NEAR_RETURN_THRESHOLD}
         query["occurrence_type"] = {"$nin": list(AUTO_RETURN_OCCURRENCES)}
@@ -724,11 +751,11 @@ async def get_central_stats(request: Request, region: Optional[str] = None):
     
     region_filter = {"region": region} if region else {}
     auto_occ_list = list(AUTO_RETURN_OCCURRENCES)
-    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    today_start = today_start_br_iso()
     
     total = await db.custodies.count_documents(region_filter)
     
-    # Tratados hoje: remessas com tratativa registrada hoje
+    # Tratados hoje: remessas com tratativa registrada hoje (00:00 BRT)
     treated_today = await db.custodies.count_documents({
         **region_filter,
         "last_treated_at": {"$gte": today_start}
@@ -903,17 +930,29 @@ async def bulk_update_custodies(data: BulkUpdateRequest, request: Request):
 async def get_custody_stats(request: Request, region: Optional[str] = None):
     await get_current_user(request)
     
-    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    today_start = today_start_br_iso()
     auto_occ_list = list(AUTO_RETURN_OCCURRENCES)
     
     # Region filter mixin (applied to every counter)
     region_filter = {"region": region} if region else {}
     
     total_today = await db.custodies.count_documents({**region_filter, "created_at": {"$gte": today_start}})
-    pending = await db.custodies.count_documents({**region_filter, "status": "pending"})
+    pending = await db.custodies.count_documents({
+        **region_filter,
+        "status": "pending",
+        "$or": [
+            {"last_treated_at": {"$exists": False}},
+            {"last_treated_at": {"$lt": today_start}}
+        ]
+    })
     resolved = await db.custodies.count_documents({**region_filter, "status": "resolved"})
-    # "Tratados" = custódias com pelo menos 1 dia útil de tratativa registrada
-    treated = await db.custodies.count_documents({**region_filter, "treatment_days": {"$gte": 1}})
+    # "Tratados Hoje" = custódias tratadas hoje (00:00 BRT)
+    treated_today = await db.custodies.count_documents({
+        **region_filter,
+        "last_treated_at": {"$gte": today_start}
+    })
+    # Backwards-compat alias
+    treated = treated_today
     
     # Near return (8-9 business days WITH treatment)
     near_return = await db.custodies.count_documents({
@@ -941,8 +980,9 @@ async def get_custody_stats(request: Request, region: Optional[str] = None):
         "total_today": total_today,
         "pending": pending,
         "resolved": resolved,
-        "treated": treated,
-        "expired": treated,  # legacy alias so older clients don't break
+        "treated_today": treated_today,
+        "treated": treated,         # legacy alias
+        "expired": treated_today,   # legacy alias for older clients
         "near_return": near_return,
         "ready_for_return": ready_for_return
     }

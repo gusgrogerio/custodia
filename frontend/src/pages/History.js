@@ -7,7 +7,8 @@ import Layout from '../components/Layout';
 import { 
   Package, 
   Clock, 
-  CheckCircle2, 
+  CheckCircle2,
+  CheckCheck, 
   AlertTriangle,
   Eye,
   RefreshCw,
@@ -51,6 +52,7 @@ const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 const statusMap = {
   pending: { label: 'Pendente', class: 'status-pending', icon: Clock },
+  treated_today: { label: 'Tratado Hoje', class: 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30', icon: CheckCheck },
   resolved: { label: 'Resolvido', class: 'status-resolved', icon: CheckCircle2 },
   expired: { label: 'Vencido', class: 'status-expired', icon: AlertTriangle },
   ready_for_return: { label: 'Apta Devolução', class: 'bg-red-500/20 text-red-400 border border-red-500/30', icon: RotateCcw },
@@ -170,7 +172,10 @@ export default function History() {
   };
 
   const getStatus = (custody) => {
+    if (custody.status === 'returned') return 'returned';
     if (custody.status === 'resolved') return 'resolved';
+    if (custody.is_ready_for_return || custody.status === 'ready_for_return') return 'ready_for_return';
+    if (custody.is_treated_today) return 'treated_today';
     const createdAt = new Date(custody.created_at);
     const now = new Date();
     const hoursDiff = (now - createdAt) / (1000 * 60 * 60);

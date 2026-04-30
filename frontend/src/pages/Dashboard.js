@@ -34,6 +34,7 @@ const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 const statusMap = {
   pending: { label: 'Pendente', class: 'status-pending', icon: Clock },
+  treated_today: { label: 'Tratado Hoje', class: 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30', icon: CheckCheck },
   resolved: { label: 'Resolvido', class: 'status-resolved', icon: CheckCircle2 },
   expired: { label: 'Vencido', class: 'status-expired', icon: AlertTriangle },
   ready_for_return: { label: 'Apta Devolução', class: 'bg-red-500/20 text-red-400 border border-red-500/30', icon: RotateCcw },
@@ -128,7 +129,7 @@ function AlertBanner({ alerts, onDismiss }) {
 export default function Dashboard() {
   const { getAuthHeaders } = useAuth();
   const { activeRegion } = useRegion();
-  const [stats, setStats] = useState({ total_today: 0, pending: 0, resolved: 0, treated: 0, near_return: 0, ready_for_return: 0 });
+  const [stats, setStats] = useState({ total_today: 0, pending: 0, resolved: 0, treated_today: 0, near_return: 0, ready_for_return: 0 });
   const [custodies, setCustodies] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -238,6 +239,7 @@ export default function Dashboard() {
     if (custody.status === 'resolved') return 'resolved';
     if (custody.status === 'ready_for_return') return 'ready_for_return';
     if (custody.is_ready_for_return) return 'ready_for_return';
+    if (custody.is_treated_today) return 'treated_today';
     const createdAt = new Date(custody.created_at);
     const now = new Date();
     const hoursDiff = (now - createdAt) / (1000 * 60 * 60);
@@ -340,11 +342,11 @@ export default function Dashboard() {
             active={filter === 'resolved'}
           />
           <MetricCard 
-            title="Tratados" 
-            value={stats.treated ?? 0} 
+            title="Tratados Hoje" 
+            value={stats.treated_today ?? 0} 
             icon={CheckCheck} 
             color="text-emerald-400"
-            subtext="≥ 1 dia útil com tratativa"
+            subtext="Reseta às 00:00 BRT"
           />
           <MetricCard 
             title="Perto Devolução" 

@@ -66,6 +66,7 @@ const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 const statusMap = {
   pending: { label: 'Em andamento', class: 'bg-blue-500/20 text-blue-400 border border-blue-500/30', icon: Clock },
+  treated_today: { label: 'Tratado Hoje', class: 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30', icon: CheckCheck },
   awaiting: { label: 'Aguardando retorno', class: 'bg-slate-500/20 text-slate-400 border border-slate-500/30', icon: Clock },
   resolved: { label: 'Finalizada', class: 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30', icon: CheckCircle2 },
   ready_for_return: { label: 'Apta devolução', class: 'bg-red-500/20 text-red-400 border border-red-500/30', icon: RotateCcw },
@@ -104,9 +105,9 @@ function CustodyCard({ custody, isSelected, onSelect, onView, searchQuery }) {
   const [expanded, setExpanded] = useState(false);
   
   const getDisplayStatus = () => {
-    if (custody.status === 'returned') return 'returned';
-    if (custody.status === 'resolved') return 'resolved';
+    if (custody.status === 'returned' || custody.status === 'resolved') return custody.status;
     if (custody.is_ready_for_return || custody.status === 'ready_for_return') return 'ready_for_return';
+    if (custody.is_treated_today) return 'treated_today';
     if (custody.days_without_treatment >= 8) return 'ready_for_return';
     return 'pending';
   };
@@ -438,6 +439,7 @@ export default function CentralCustodias() {
     if (custody.status === 'returned') return 'returned';
     if (custody.status === 'resolved') return 'resolved';
     if (custody.is_ready_for_return || custody.status === 'ready_for_return') return 'ready_for_return';
+    if (custody.is_treated_today) return 'treated_today';
     return 'pending';
   };
 
