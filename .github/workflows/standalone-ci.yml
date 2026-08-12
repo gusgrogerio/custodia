@@ -1,0 +1,35 @@
+name: Standalone CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - agent/standalone-migration
+
+jobs:
+  backend-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate Python syntax
+        run: python -m py_compile backend/server.py backend/local_storage.py backend/standalone.py backend/migrate_emergent_photos.py
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: yarn install
+      - name: Build
+        env:
+          REACT_APP_BACKEND_URL: ''
+        run: yarn build
