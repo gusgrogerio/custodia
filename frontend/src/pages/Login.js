@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { Package, Eye, EyeOff, Loader2, ShieldAlert } from 'lucide-react';
+import { Eye, EyeOff, Loader2, ShieldAlert, ShieldCheck } from 'lucide-react';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -22,11 +22,10 @@ export default function Login() {
     setLoading(true);
 
     const result = await login(email, password);
-    
+
     if (result.success) {
       navigate('/dashboard');
     } else {
-      // Lockout 423 → mais explícito; demais → mensagem genérica do backend
       setError(result.error);
       setIsLocked(result.status === 423);
     }
@@ -34,38 +33,35 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex">
-      {/* Background Image Side */}
-      <div 
+    <div className="min-h-screen flex bg-slate-950">
+      <div
         className="hidden lg:flex lg:w-1/2 bg-cover bg-center relative"
         style={{
           backgroundImage: 'url(https://images.pexels.com/photos/30341205/pexels-photo-30341205.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940)'
         }}
       >
-        <div className="absolute inset-0 bg-slate-950/80" />
-        <div className="relative z-10 flex flex-col justify-center p-12">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center">
-              <Package className="w-7 h-7 text-white" />
-            </div>
-            <h1 className="text-3xl font-black text-white font-['Chivo']">D1 Custódia</h1>
+        <div className="absolute inset-0 bg-slate-950/85" />
+        <div className="relative z-10 flex flex-col justify-center p-12 xl:p-16">
+          <div className="inline-flex w-fit bg-white rounded-2xl p-4 mb-7 shadow-2xl shadow-black/20">
+            <img
+              src="/logo-d1-custodia.svg"
+              alt="D1 Custódia"
+              className="w-48 xl:w-56 h-auto"
+            />
           </div>
           <p className="text-xl text-slate-300 max-w-md leading-relaxed">
-            Sistema de gestão de custódias para operações logísticas. 
+            Sistema de gestão de custódias para operações logísticas.
             Registre, acompanhe e gerencie suas remessas em um único lugar.
           </p>
         </div>
       </div>
 
-      {/* Login Form Side */}
       <div className="flex-1 flex items-center justify-center p-6 bg-slate-950">
         <div className="w-full max-w-md animate-fadeIn">
-          {/* Mobile Logo */}
-          <div className="lg:hidden flex items-center justify-center gap-3 mb-8">
-            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center">
-              <Package className="w-6 h-6 text-white" />
+          <div className="lg:hidden flex flex-col items-center justify-center mb-8">
+            <div className="bg-white rounded-2xl px-5 py-3 shadow-xl shadow-black/20">
+              <img src="/logo-d1-custodia.svg" alt="D1 Custódia" className="w-40 h-auto" />
             </div>
-            <h1 className="text-2xl font-black text-white font-['Chivo']">D1 Custódia</h1>
           </div>
 
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-xl">
@@ -106,6 +102,7 @@ export default function Login() {
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                    aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
                   >
                     {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                   </button>
@@ -113,7 +110,7 @@ export default function Login() {
               </div>
 
               {error && (
-                <div 
+                <div
                   className={`rounded-lg p-3 text-sm flex items-start gap-2 ${
                     isLocked
                       ? 'bg-amber-500/10 border border-amber-500/30 text-amber-300'
@@ -126,8 +123,8 @@ export default function Login() {
                 </div>
               )}
 
-              <Button 
-                type="submit" 
+              <Button
+                type="submit"
                 className="w-full h-12 bg-blue-600 hover:bg-blue-500 text-white font-semibold transition-all duration-200"
                 disabled={loading}
                 data-testid="login-submit-button"
@@ -143,10 +140,9 @@ export default function Login() {
               </Button>
             </form>
 
-            <div className="mt-6 text-center">
-              <p className="text-slate-500 text-xs">
-                Sistema fechado · Solicite acesso ao administrador.
-              </p>
+            <div className="mt-6 flex items-center justify-center gap-2 text-slate-500 text-xs">
+              <ShieldCheck className="w-4 h-4" />
+              <span>Sistema seguro · Acesso restrito.</span>
             </div>
           </div>
         </div>
