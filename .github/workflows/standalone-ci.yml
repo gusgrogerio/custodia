@@ -31,5 +31,6 @@ jobs:
         run: yarn install
       - name: Build
         env:
+          CI: 'false'
           REACT_APP_BACKEND_URL: ''
         run: yarn build
