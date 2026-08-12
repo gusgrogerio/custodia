@@ -1,0 +1,55 @@
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:?defina MONGO_ROOT_USERNAME no .env}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?defina MONGO_ROOT_PASSWORD no .env}
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - custody_net
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    environment:
+      MONGO_URL: mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongo:27017/?authSource=admin
+      DB_NAME: ${DB_NAME:-d1_custodia}
+      JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET no .env}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?defina ADMIN_EMAIL no .env}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?defina ADMIN_PASSWORD no .env}
+      FRONTEND_URL: ${PUBLIC_URL:-http://localhost:8080}
+      CORS_ORIGINS: ${PUBLIC_URL:-http://localhost:8080}
+      STORAGE_ROOT: /data/uploads
+      TZ: America/Sao_Paulo
+    volumes:
+      - custody_uploads:/data/uploads
+    expose:
+      - "8000"
+    networks:
+      - custody_net
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        REACT_APP_BACKEND_URL: ""
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "127.0.0.1:${APP_PORT:-8080}:80"
+    networks:
+      - custody_net
+
+volumes:
+  mongo_data:
+  custody_uploads:
+
+networks:
+  custody_net:
+    driver: bridge
