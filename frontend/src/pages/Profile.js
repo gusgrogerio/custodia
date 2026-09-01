@@ -1,23 +1,16 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import Layout from '../components/Layout';
-import { 
+import {
   User,
   Mail,
   Shield,
-  Calendar,
-  Loader2,
-  Save
+  Loader2
 } from 'lucide-react';
-import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
-import { Label } from '../components/ui/label';
 import { Badge } from '../components/ui/badge';
-import { toast } from 'sonner';
 
 export default function Profile() {
   const { user } = useAuth();
-  const [loading, setLoading] = useState(false);
 
   if (!user) {
     return (
@@ -32,13 +25,11 @@ export default function Profile() {
   return (
     <Layout>
       <div className="max-w-2xl mx-auto space-y-6 animate-fadeIn">
-        {/* Header */}
         <div className="mb-6">
           <h1 className="text-2xl sm:text-3xl font-black text-slate-50 font-['Chivo']">Perfil</h1>
           <p className="text-slate-400 text-sm mt-1">Suas informações de conta</p>
         </div>
 
-        {/* Profile Card */}
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
           <div className="flex items-center gap-4 mb-6 pb-6 border-b border-slate-800">
             <div className="w-16 h-16 bg-blue-600/20 rounded-full flex items-center justify-center">
@@ -47,11 +38,10 @@ export default function Profile() {
             <div>
               <h2 className="text-xl font-bold text-slate-50">{user.name}</h2>
               <div className="flex items-center gap-2 mt-1">
-                <Badge 
-                  className={user.role === 'admin' 
-                    ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' 
-                    : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
-                  }
+                <Badge
+                  className={user.role === 'admin'
+                    ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                    : 'bg-blue-500/10 text-blue-400 border-blue-500/20'}
                 >
                   <Shield className="w-3 h-3 mr-1" />
                   {user.role === 'admin' ? 'Administrador' : 'Usuário'}
@@ -87,10 +77,8 @@ export default function Profile() {
           </div>
         </div>
 
-        {/* App Info */}
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
           <h3 className="text-lg font-semibold text-slate-50 mb-4">Sobre o Sistema</h3>
-          
           <div className="space-y-3 text-sm">
             <div className="flex items-center justify-between py-2 border-b border-slate-800">
               <span className="text-slate-400">Versão</span>
@@ -102,9 +90,7 @@ export default function Profile() {
             </div>
             <div className="flex items-center justify-between py-2">
               <span className="text-slate-400">Ambiente</span>
-              <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
-                Produção
-              </Badge>
+              <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20">Produção</Badge>
             </div>
           </div>
         </div>
