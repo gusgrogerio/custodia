@@ -1,28 +1,36 @@
 import React from 'react';
 import { useRegion } from '../context/RegionContext';
-import { MapPin, Building2, Lock, RotateCcw } from 'lucide-react';
+import { Building2, MapPin, RotateCcw, Lock } from 'lucide-react';
+
+const iconFor = (region) => {
+  if (region === 'Guarulhos') return Building2;
+  if (region === 'São Paulo') return MapPin;
+  return RotateCcw;
+};
+
+const testIdFor = (region) => region
+  .toLowerCase()
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/\s+/g, '-');
 
 export default function RegionSwitcher({ variant = 'full' }) {
   const { activeRegion, setActiveRegion, regions, isLocked } = useRegion();
 
-  const iconFor = (r) => {
-    if (r === 'Guarulhos') return Building2;
-    if (r === 'Devolução') return RotateCcw;
-    return MapPin;
-  };
-
   if (isLocked && regions.length === 1) {
-    const r = regions[0];
-    const Icon = iconFor(r);
+    const region = regions[0];
+    const Icon = iconFor(region);
     return (
       <div
-        className="flex items-center gap-2 px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg"
+        className="flex items-center gap-2.5 px-3 py-2.5 bg-slate-950/70 border border-slate-800 rounded-xl"
         data-testid="region-locked"
         title="Sua operação está vinculada a este setor"
       >
-        <Icon className="w-4 h-4 text-blue-400" />
-        <span className="text-sm font-bold text-slate-200">{r}</span>
-        <Lock className="w-3.5 h-3.5 text-slate-500 ml-auto" />
+        <div className="w-7 h-7 rounded-lg bg-blue-500/10 flex items-center justify-center">
+          <Icon className="w-3.5 h-3.5 text-blue-400" />
+        </div>
+        <span className="text-xs font-semibold text-slate-200 truncate">{region}</span>
+        <Lock className="w-3.5 h-3.5 text-slate-600 ml-auto" />
       </div>
     );
   }
@@ -30,25 +38,25 @@ export default function RegionSwitcher({ variant = 'full' }) {
   if (variant === 'compact') {
     return (
       <div
-        className="flex gap-1 p-1 bg-slate-950 border border-slate-800 rounded-lg"
+        className="grid grid-cols-3 gap-1 p-1 bg-slate-950/70 border border-slate-800 rounded-xl"
         data-testid="region-switcher-compact"
       >
-        {regions.map((r) => {
-          const Icon = iconFor(r);
-          const active = r === activeRegion;
+        {regions.map((region) => {
+          const active = region === activeRegion;
           return (
             <button
-              key={r}
-              onClick={() => setActiveRegion(r)}
-              data-testid={`region-tab-${r.toLowerCase().replace(' ', '-')}`}
-              className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-semibold transition-all ${
+              key={region}
+              type="button"
+              onClick={() => setActiveRegion(region)}
+              data-testid={`region-tab-${testIdFor(region)}`}
+              title={region}
+              className={`min-w-0 h-9 px-1.5 rounded-lg text-[10px] font-bold leading-tight transition-all duration-200 ${
                 active
-                  ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/40'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                  ? 'bg-blue-600 text-white shadow-sm shadow-blue-950/40'
+                  : 'text-slate-500 hover:text-slate-200 hover:bg-slate-800/80'
               }`}
             >
-              <Icon className="w-3.5 h-3.5" />
-              {r}
+              <span className="block truncate">{region}</span>
             </button>
           );
         })}
@@ -58,28 +66,26 @@ export default function RegionSwitcher({ variant = 'full' }) {
 
   return (
     <div
-      className="flex items-center gap-2 p-1.5 bg-slate-900/80 backdrop-blur border border-slate-800 rounded-xl"
+      className="inline-flex items-center gap-1 p-1 bg-slate-900 border border-slate-800 rounded-xl"
       data-testid="region-switcher"
     >
-      {regions.map((r) => {
-        const Icon = iconFor(r);
-        const active = r === activeRegion;
+      {regions.map((region) => {
+        const Icon = iconFor(region);
+        const active = region === activeRegion;
         return (
           <button
-            key={r}
-            onClick={() => setActiveRegion(r)}
-            data-testid={`region-tab-${r.toLowerCase().replace(' ', '-')}`}
-            className={`relative flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold uppercase tracking-wide transition-all duration-200 ${
+            key={region}
+            type="button"
+            onClick={() => setActiveRegion(region)}
+            data-testid={`region-tab-${testIdFor(region)}`}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all duration-200 ${
               active
-                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30 scale-[1.02]'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'
             }`}
           >
-            <Icon className="w-4 h-4" />
-            <span>{r}</span>
-            {active && (
-              <span className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-400 rounded-full ring-2 ring-slate-900" />
-            )}
+            <Icon className="w-3.5 h-3.5" />
+            <span>{region}</span>
           </button>
         );
       })}
