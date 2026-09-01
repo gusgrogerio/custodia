@@ -1,0 +1,17 @@
+{
+  "short_name": "D1 Custódia",
+  "name": "D1 Custódia",
+  "description": "Sistema de gestão de custódias para operações logísticas.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#020617",
+  "icons": [
+    {
+      "src": "/d1-symbol.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -5,7 +5,7 @@ const RegionContext = createContext(null);
 
 const STORAGE_KEY = 'd1_active_region';
 const DEFAULT_REGION = 'Guarulhos';
-export const AVAILABLE_REGIONS = ['Guarulhos', 'São Paulo'];
+export const AVAILABLE_REGIONS = ['Guarulhos', 'São Paulo', 'Devolução'];
 
 export function RegionProvider({ children }) {
   const { user, isOperator } = useAuth();
@@ -18,7 +18,6 @@ export function RegionProvider({ children }) {
     return DEFAULT_REGION;
   });
 
-  // If the logged-in user is an operator with a region, force-lock to it
   useEffect(() => {
     if (isOperator && user && user.region && AVAILABLE_REGIONS.includes(user.region)) {
       if (user.region !== activeRegion) {
@@ -31,13 +30,11 @@ export function RegionProvider({ children }) {
 
   const setActiveRegion = (region) => {
     if (!AVAILABLE_REGIONS.includes(region)) return;
-    // Operators cannot switch regions
     if (isOperator && user?.region && region !== user.region) return;
     setActiveRegionState(region);
     try { localStorage.setItem(STORAGE_KEY, region); } catch (e) { /* ignore */ }
   };
 
-  // Sync across tabs
   useEffect(() => {
     const handler = (e) => {
       if (e.key === STORAGE_KEY && e.newValue && AVAILABLE_REGIONS.includes(e.newValue)) {
@@ -49,7 +46,6 @@ export function RegionProvider({ children }) {
     return () => window.removeEventListener('storage', handler);
   }, [isOperator, user]);
 
-  // Operators only see their own region in the switcher; admins see both
   const visibleRegions = isOperator && user?.region ? [user.region] : AVAILABLE_REGIONS;
   const isLocked = isOperator && !!user?.region;
 
