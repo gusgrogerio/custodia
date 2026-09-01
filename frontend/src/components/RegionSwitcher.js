@@ -1,20 +1,16 @@
 import React from 'react';
 import { useRegion } from '../context/RegionContext';
-import { MapPin, Building2, Lock } from 'lucide-react';
+import { MapPin, Building2, Lock, RotateCcw } from 'lucide-react';
 
-/**
- * Top-level Region Switcher tabs.
- * - Admin sees both regions and can switch
- * - Operator sees only their own region (locked, read-only badge)
- * variant="full" -> wide horizontal bar (desktop)
- * variant="compact" -> stacked pill buttons (mobile/sidebar)
- */
 export default function RegionSwitcher({ variant = 'full' }) {
   const { activeRegion, setActiveRegion, regions, isLocked } = useRegion();
 
-  const iconFor = (r) => (r === 'Guarulhos' ? Building2 : MapPin);
+  const iconFor = (r) => {
+    if (r === 'Guarulhos') return Building2;
+    if (r === 'Devolução') return RotateCcw;
+    return MapPin;
+  };
 
-  // Locked operator → render single locked badge
   if (isLocked && regions.length === 1) {
     const r = regions[0];
     const Icon = iconFor(r);
@@ -22,7 +18,7 @@ export default function RegionSwitcher({ variant = 'full' }) {
       <div
         className="flex items-center gap-2 px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg"
         data-testid="region-locked"
-        title="Sua operação está vinculada a esta região"
+        title="Sua operação está vinculada a este setor"
       >
         <Icon className="w-4 h-4 text-blue-400" />
         <span className="text-sm font-bold text-slate-200">{r}</span>
